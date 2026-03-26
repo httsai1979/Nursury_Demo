@@ -148,7 +148,7 @@ export default function App() {
             <span className="text-[#002244] font-bold text-xl block leading-none">⛵</span>
           </div>
           <div>
-            <h1 className="text-white font-bold text-lg leading-tight">Canoe Lake</h1>
+            <h1 className="text-white font-bold text-lg leading-tight">TOP Nursury</h1>
             <p className="text-xs text-blue-300">Financial Portal</p>
           </div>
         </div>
