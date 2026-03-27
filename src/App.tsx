@@ -4,12 +4,12 @@ import {
   Database, Sparkles, Check, Search, Upload, LayoutDashboard, 
   TrendingUp, Users, PieChart, ShieldCheck, Wallet, Bell,
   ChevronDown, MapPin, BadgeInfo, Star, FileOutput, X, Printer, Receipt,
-  UserPlus, UserMinus, UserCheck, AlertTriangle
+  UserPlus, UserMinus, UserCheck, AlertTriangle, ShieldAlert, Activity, LineChart, Building
 } from 'lucide-react';
 
 const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzvIzwCL52hTRwn07LeE94gMEJzIte92Z-XuBMlrEm3THOESmKd98Lcl00Q_QGsb6W4tw/exec"; 
 
-// 痛點 8: 動態產生不同校區的模擬數據 (100% Local Processing)
+// 痛點 8 & 痛點 16: 動態產生數據，並加入模擬的 NI 號碼錯誤 (Pre-flight Error)
 const generateMockData = (siteName) => {
   const baseNames = ["Oliver Smith", "Amelia Jones", "George Williams", "Isla Brown", "Harry Taylor", "Ava Davies", "Jack Evans", "Mia Thomas", "Noah Roberts", "Sophia Johnson"];
   const rooms = ["Baby Room (0-2y)", "Toddler Room (2-3y)", "Pre-School (3-5y)"];
@@ -34,6 +34,9 @@ const generateMockData = (siteName) => {
     const isSEND = (index + siteModifier) % 10 === 0; 
     const sendFunding = isSEND ? 150 : 0; 
 
+    // 階段四 PP16：安插隨機的補助資格錯誤 (約 10% 的機率)
+    const hasFundingError = fundedHours > 0 && (index % 11 === 0);
+
     const invoiceStatus = (index + siteModifier) % 5 === 1 ? 'Sent' : 'Pending';
     
     return {
@@ -42,6 +45,7 @@ const generateMockData = (siteName) => {
       age,
       room,
       isSEND,
+      hasFundingError,
       email: `parent${index + 1}@example.com`,
       totalHours,
       fundedHours,
@@ -64,31 +68,34 @@ export default function App() {
   const [selectedSite, setSelectedSite] = useState('London (Chelsea)');
   const [students, setStudents] = useState(() => generateMockData(selectedSite));
   
-  // 階段二新增：發票 Modal 狀態
   const [invoiceModalData, setInvoiceModalData] = useState(null);
-
-  // 階段三新增：互動式排班狀態 (Floating Staff Pool Simulation)
   const [staffData, setStaffData] = useState({ pool: 0, rooms: {} });
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [isChasing, setIsChasing] = useState(false);
+  
+  // 階段四 PP16: 狀態控制
+  const [isPreflightRunning, setIsPreflightRunning] = useState(false);
+  const [preflightDone, setPreflightDone] = useState(false);
+
   const [apiStatus, setApiStatus] = useState('loading'); 
   const [searchTerm, setSearchTerm] = useState('');
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     setApiStatus('loading');
+    setPreflightDone(false); // 切換校區時重置預檢狀態
     const timer = setTimeout(() => {
       setStudents(generateMockData(selectedSite));
       
-      // 階段三：每次切換校區，重置一個「有待優化」的排班情境供使用者推演
+      // 階段四 PP12: 在 rooms 資料結構中加入 agencyStaff (派遣員工)
       setStaffData({
         pool: 0,
         rooms: {
-          baby: { id: 'baby', name: 'Baby Room', desc: 'Ratio 1:3', children: 8, cap: 12, staff: 4, ratio: 3, revenue: 560, cost: 120, color: 'rose' }, // 8 children needs 3 staff. 4 is overstaffed.
-          toddler: { id: 'toddler', name: 'Toddler Room', desc: 'Ratio 1:4', children: 12, cap: 12, staff: 3, ratio: 4, revenue: 840, cost: 120, color: 'amber' }, // 12 children needs 3 staff. Perfect.
-          preschool: { id: 'preschool', name: 'Pre-School', desc: 'Ratio 1:8', children: 22, cap: 24, staff: 2, ratio: 8, revenue: 1540, cost: 120, color: 'emerald' } // 22 children needs 3 staff. 2 is non-compliant!
+          baby: { id: 'baby', name: 'Baby Room', desc: 'Ratio 1:3', children: 8, cap: 12, staff: 4, agencyStaff: 0, ratio: 3, revenue: 560, cost: 120, agencyCost: 240, color: 'rose' }, 
+          toddler: { id: 'toddler', name: 'Toddler Room', desc: 'Ratio 1:4', children: 12, cap: 12, staff: 3, agencyStaff: 0, ratio: 4, revenue: 840, cost: 120, agencyCost: 240, color: 'amber' }, 
+          preschool: { id: 'preschool', name: 'Pre-School', desc: 'Ratio 1:8', children: 22, cap: 24, staff: 2, agencyStaff: 0, ratio: 8, revenue: 1540, cost: 120, agencyCost: 240, color: 'emerald' } 
         }
       });
       
@@ -97,10 +104,14 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [selectedSite]);
 
-  // 階段三：處理移除員工至浮動池
   const handleRemoveStaff = (roomId) => {
     setStaffData(prev => {
       const newRooms = { ...prev.rooms };
+      // 優先移除派遣員工
+      if (newRooms[roomId].agencyStaff > 0) {
+        newRooms[roomId].agencyStaff -= 1;
+        return { ...prev, rooms: newRooms };
+      }
       if (newRooms[roomId].staff > 0) {
         newRooms[roomId].staff -= 1;
         return { ...prev, pool: prev.pool + 1, rooms: newRooms };
@@ -109,7 +120,6 @@ export default function App() {
     });
   };
 
-  // 階段三：處理從浮動池指派員工
   const handleAddStaff = (roomId) => {
     setStaffData(prev => {
       if (prev.pool > 0) {
@@ -119,6 +129,24 @@ export default function App() {
       }
       return prev;
     });
+  };
+
+  // 階段四 PP12: 新增高價派遣員工邏輯
+  const handleAddAgencyStaff = (roomId) => {
+    setStaffData(prev => {
+      const newRooms = { ...prev.rooms };
+      newRooms[roomId].agencyStaff += 1;
+      return { ...prev, rooms: newRooms };
+    });
+  };
+
+  // 階段四 PP16: 地方政府補助預檢邏輯
+  const handlePreflightCheck = () => {
+    setIsPreflightRunning(true);
+    setTimeout(() => {
+      setIsPreflightRunning(false);
+      setPreflightDone(true);
+    }, 2000);
   };
 
   const handleDispatch = () => {
@@ -181,8 +209,13 @@ export default function App() {
   const totalRev = totalParentRev + totalFundedRev;
   const unpaidAmount = students.filter(s => s.paymentStatus === 'Unpaid' && s.invoiceStatus === 'Sent').reduce((acc, curr) => acc + curr.totalParentFee, 0);
 
+  const errorCount = students.filter(s => s.hasFundingError).length;
+
+  // 階段四: Dashboard 模擬數據
   const estGrossMargin = selectedSite.includes('London') ? '24.5%' : selectedSite.includes('Manchester') ? '28.1%' : '21.0%';
   const occupancyRate = selectedSite.includes('London') ? '82%' : selectedSite.includes('Manchester') ? '94%' : '76%';
+  // 痛點 20 估值模擬 (簡化公式: 年化營收 * 毛利 * 4倍EBITDA)
+  const estimatedValuation = (totalRev * 12 * 0.245 * 4).toLocaleString(undefined, {maximumFractionDigits:0});
 
   const renderContent = () => {
     if (apiStatus === 'loading') {
@@ -262,9 +295,44 @@ export default function App() {
               </div>
             </div>
 
+            {/* 階段四 PP13 & PP20：未來營收與估值大腦 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl -mr-10 -mt-10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center mb-4 text-indigo-200"><Activity size={20} className="mr-2"/> <h4 className="font-bold">Waitlist Pipeline (90 Days)</h4></div>
+                  <div className="flex justify-between items-end mb-6">
+                    <div><p className="text-xs text-indigo-300 font-medium uppercase tracking-wider mb-1">Potential Future Revenue</p><p className="text-3xl font-black">£24,500</p></div>
+                    <div className="text-right"><p className="text-lg font-bold text-emerald-400">+12 Children</p><p className="text-xs text-indigo-300">Ready to enrol</p></div>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                     <div className="h-full bg-indigo-500" style={{width: '60%'}} title="Baby Room Pipeline"></div>
+                     <div className="h-full bg-amber-500" style={{width: '30%'}} title="Toddler Room Pipeline"></div>
+                     <div className="h-full bg-emerald-500" style={{width: '10%'}} title="Pre-School Pipeline"></div>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400 mt-2 font-bold uppercase"><span>Baby (60%)</span><span>Toddler (30%)</span><span>Pre (10%)</span></div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden">
+                <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mb-10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center mb-4 text-slate-300"><Building size={20} className="mr-2"/> <h4 className="font-bold">Exit Valuation Engine</h4></div>
+                  <div className="flex justify-between items-end mb-6">
+                    <div><p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Est. Market Value</p><p className="text-3xl font-black text-emerald-400">£{estimatedValuation}</p></div>
+                    <div className="text-right"><span className="px-2.5 py-1 bg-slate-700/50 rounded-lg text-xs font-bold text-slate-300 border border-slate-600">Multiple: 4x EBITDA</span></div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Based on your current run-rate revenue and {estGrossMargin} gross margin. 
+                    <strong className="text-white block mt-1">💡 Tip: Increase occupancy by 3% to unlock an extra £120k in valuation.</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
                <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)]">
-                  <h4 className="text-lg font-bold text-slate-900 mb-6 flex items-center"><PieChart className="mr-2 text-slate-400" size={20}/> Income vs Labour Cost ({selectedSite})</h4>
+                  <h4 className="text-lg font-bold text-slate-900 mb-6 flex items-center"><PieChart className="mr-2 text-slate-400" size={20}/> Income vs Labour Cost</h4>
                   <div className="space-y-6">
                      <div>
                        <div className="flex justify-between text-sm mb-2"><span className="text-emerald-700 font-bold">Total Expected Income</span><span className="font-bold text-slate-900">£{totalRev.toLocaleString(undefined, {maximumFractionDigits:0})}</span></div>
@@ -281,21 +349,17 @@ export default function App() {
                   </div>
                </div>
                
-               <div className="bg-gradient-to-br from-[#0F172A] to-[#1E293B] p-6 md:p-8 rounded-3xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.3)] text-white relative overflow-hidden">
+               <div className="bg-gradient-to-br from-[#002244] to-[#003366] p-6 md:p-8 rounded-3xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.3)] text-white relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl -mr-20 -mt-20"></div>
                   <h4 className="text-lg font-bold text-blue-50 mb-6 flex items-center relative z-10"><Sparkles size={20} className="mr-2 text-amber-400"/> AI CFO Insights</h4>
                   <ul className="space-y-5 text-sm text-slate-300 relative z-10">
                     <li className="flex items-start bg-white/5 p-4 rounded-2xl border border-white/10">
                       <Star size={18} className="text-emerald-400 mr-3 mt-0.5 shrink-0"/>
-                      <span><strong className="text-white block mb-1">Funding Shift Ahead:</strong> 3 children in {selectedSite} are turning 3 next month. Forecast updated.</span>
+                      <span><strong className="text-white block mb-1">Funding Shift Ahead:</strong> 3 children are turning 3 next month. Forecast updated.</span>
                     </li>
                     <li className="flex items-start bg-white/5 p-4 rounded-2xl border border-white/10">
                       <Wallet size={18} className="text-blue-400 mr-3 mt-0.5 shrink-0"/>
                       <span><strong className="text-white block mb-1">Cashflow Sync:</strong> Open Banking detected £3,400 TFC clearing tomorrow.</span>
-                    </li>
-                    <li className="flex items-start bg-white/5 p-4 rounded-2xl border border-white/10">
-                      <Users size={18} className="text-amber-400 mr-3 mt-0.5 shrink-0"/>
-                      <span><strong className="text-white block mb-1">Labour Optimisation:</strong> Thursday PMs run at a 5% loss. Recommend offering Ad-hoc sessions.</span>
                     </li>
                   </ul>
                </div>
@@ -304,7 +368,6 @@ export default function App() {
         );
 
       case 'profitability':
-        // 階段三：互動式排班系統 (Interactive Optimisation Module)
         const { pool, rooms } = staffData;
         return (
           <div className="space-y-6 pb-24 md:pb-6 animate-in fade-in duration-500">
@@ -314,7 +377,6 @@ export default function App() {
                 <span className="text-sm text-slate-500 font-medium">Live Ratio Simulation & Profitability for {selectedSite}</span>
               </div>
               
-              {/* Floating Staff Pool 浮動人力池 UI */}
               <div className={`flex items-center px-4 py-2.5 rounded-2xl font-bold border-2 transition-all shadow-sm ${pool > 0 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 scale-105' : 'bg-white border-slate-200 text-slate-500'}`}>
                  <Users size={18} className="mr-2" /> 
                  <span>Floating Staff Pool: <span className="text-xl ml-2 font-black">{pool}</span></span>
@@ -323,26 +385,25 @@ export default function App() {
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {Object.entries(rooms).map(([roomId, room]) => {
-                // 動態計算合規性
+                const totalStaffInRoom = room.staff + room.agencyStaff;
                 const reqStaff = Math.ceil(room.children / room.ratio);
-                const isCompliant = room.staff >= reqStaff;
-                const isOverstaffed = room.staff > reqStaff;
+                const isCompliant = totalStaffInRoom >= reqStaff;
+                const isOverstaffed = totalStaffInRoom > reqStaff;
                 
-                // 狀態 Badge 渲染
                 let statusBadge = null;
-                if (room.staff < reqStaff) {
-                  statusBadge = <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded-md flex items-center animate-pulse"><AlertTriangle size={12} className="mr-1"/>Non-Compliant (-{reqStaff - room.staff})</span>;
+                if (totalStaffInRoom < reqStaff) {
+                  statusBadge = <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded-md flex items-center animate-pulse"><AlertTriangle size={12} className="mr-1"/>Non-Compliant (-{reqStaff - totalStaffInRoom})</span>;
                 } else if (isOverstaffed) {
-                  statusBadge = <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-md">Overstaffed (+{room.staff - reqStaff})</span>;
+                  statusBadge = <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-md">Overstaffed (+{totalStaffInRoom - reqStaff})</span>;
                 } else {
                   statusBadge = <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md flex items-center"><UserCheck size={12} className="mr-1"/>Optimal</span>;
                 }
 
-                // 即時利潤率計算
-                const profitMargin = (((room.revenue - (room.staff * room.cost)) / room.revenue) * 100).toFixed(1);
-                const marginColor = profitMargin < 15 ? 'text-rose-600' : profitMargin < 25 ? 'text-amber-600' : 'text-emerald-600';
+                // 階段四 PP12：派遣員工的高額成本計算
+                const totalLabourCost = (room.staff * room.cost) + (room.agencyStaff * room.agencyCost);
+                const profitMargin = (((room.revenue - totalLabourCost) / room.revenue) * 100).toFixed(1);
+                const marginColor = profitMargin < 10 ? 'text-rose-600' : profitMargin < 20 ? 'text-amber-600' : 'text-emerald-600';
 
-                // 主題顏色對應
                 const themeClasses = {
                   rose: { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-950', badgeBg: 'bg-rose-200/80', badgeText: 'text-rose-900' },
                   amber: { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-950', badgeBg: 'bg-amber-200/80', badgeText: 'text-amber-900' },
@@ -363,25 +424,41 @@ export default function App() {
                           <span className="font-bold text-slate-900 text-base">{room.children} / {room.cap} <span className="text-xs font-normal text-slate-400">(Cap)</span></span>
                         </div>
                         
-                        {/* 互動式排班控制器 (Interactive Controls) */}
                         <div className="flex justify-between items-center text-sm p-3.5 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
-                          <span className="text-slate-600 font-bold">Labour Assigned</span>
-                          <div className="flex items-center space-x-3 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
-                            <button 
-                              onClick={() => handleRemoveStaff(roomId)} 
-                              disabled={room.staff === 0} 
-                              className={`p-2 rounded-lg transition ${room.staff === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600 active:scale-95'}`}
-                            >
-                              <UserMinus size={18}/>
-                            </button>
-                            <span className="font-black text-xl text-slate-900 w-6 text-center">{room.staff}</span>
-                            <button 
-                              onClick={() => handleAddStaff(roomId)} 
-                              disabled={pool === 0} 
-                              className={`p-2 rounded-lg transition ${pool === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 active:scale-95'}`}
-                            >
-                              <UserPlus size={18}/>
-                            </button>
+                          <span className="text-slate-600 font-bold flex flex-col">
+                            Regular Staff
+                            {room.agencyStaff > 0 && <span className="text-[10px] text-rose-500 mt-0.5 flex items-center"><AlertTriangle size={10} className="mr-1"/> +{room.agencyStaff} Agency</span>}
+                          </span>
+                          <div className="flex items-center space-x-1">
+                            <div className="flex items-center space-x-3 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                              <button 
+                                onClick={() => handleRemoveStaff(roomId)} 
+                                disabled={totalStaffInRoom === 0} 
+                                className={`p-2 rounded-lg transition ${totalStaffInRoom === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600 active:scale-95'}`}
+                              >
+                                <UserMinus size={18}/>
+                              </button>
+                              <span className="font-black text-xl text-slate-900 w-6 text-center">{totalStaffInRoom}</span>
+                              <button 
+                                onClick={() => handleAddStaff(roomId)} 
+                                disabled={pool === 0} 
+                                className={`p-2 rounded-lg transition ${pool === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 active:scale-95'}`}
+                                title="Add Regular Staff from Pool"
+                              >
+                                <UserPlus size={18}/>
+                              </button>
+                            </div>
+                            
+                            {/* 階段四 PP12：高額派遣員工呼叫按鈕 */}
+                            {pool === 0 && !isCompliant && (
+                              <button 
+                                onClick={() => handleAddAgencyStaff(roomId)}
+                                className="ml-2 bg-rose-100 text-rose-700 p-2 rounded-xl hover:bg-rose-200 transition active:scale-95 border border-rose-200"
+                                title="Emergency Hire Agency Staff (£££)"
+                              >
+                                <ShieldAlert size={18} />
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="flex justify-end">{statusBadge}</div>
@@ -389,7 +466,10 @@ export default function App() {
                       
                       <div className="pt-6 border-t border-slate-100 mt-auto">
                         <div className="flex justify-between items-center text-sm mb-5">
-                          <span className="text-slate-500 font-medium">Est. Profit Margin</span>
+                          <span className="text-slate-500 font-medium flex flex-col">
+                            Est. Profit Margin
+                            {room.agencyStaff > 0 && <span className="text-[10px] text-rose-500 mt-1">Agency costs reducing margin</span>}
+                          </span>
                           <span className={`font-black text-2xl transition-colors duration-300 ${marginColor}`}>{profitMargin}%</span>
                         </div>
                         <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center transition shadow-md active:scale-[0.98]">
@@ -405,7 +485,7 @@ export default function App() {
             <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-start">
               <BadgeInfo size={20} className="text-indigo-600 mr-3 shrink-0 mt-0.5" />
               <p className="text-sm text-indigo-900">
-                <strong>How to optimise:</strong> The Pre-School is currently non-compliant. Click the <strong className="bg-white px-1.5 py-0.5 rounded shadow-sm">-</strong> button on the overstaffed Baby Room to move a staff member to the Floating Pool, then click <strong className="bg-white px-1.5 py-0.5 rounded shadow-sm">+</strong> on the Pre-School to assign them there. Watch your profit margins update instantly!
+                <strong>How to optimise:</strong> The Pre-School is non-compliant. If the Floating Pool is 0, the red <ShieldAlert size={14} className="inline mx-1 text-rose-500"/> button appears to hire Agency Staff. Click it to see how expensive Agency Staff destroys your room's profit margin!
               </p>
             </div>
           </div>
@@ -418,25 +498,41 @@ export default function App() {
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 mb-6">
               <div>
                 <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Funding Decoder</h3>
-                <span className="text-sm text-slate-500 font-medium">Hybrid Billing & Reconciliation for {selectedSite}</span>
+                <span className="text-sm text-slate-500 font-medium">Hybrid Billing & Local Authority Pre-flight</span>
               </div>
             </div>
 
-            <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] mb-6 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-              <div className="relative w-full md:w-80 h-12">
+            <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] mb-6 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+              <div className="relative w-full lg:w-80 h-12">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                 <input type="text" placeholder="Search child or TFC Ref..." className="w-full h-full pl-12 pr-4 bg-slate-50/50 border-0 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition" onChange={(e) => setSearchTerm(e.target.value)} />
               </div>
-              <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto p-2 md:p-0">
+              <div className="flex flex-col md:flex-row gap-3 w-full lg:w-auto p-2 lg:p-0">
+                {/* 階段四 PP16: 防呆預檢按鈕 */}
+                <button 
+                  onClick={handlePreflightCheck} 
+                  disabled={isPreflightRunning || preflightDone}
+                  className={`flex-1 md:flex-none flex justify-center items-center px-6 h-12 rounded-xl font-bold transition shadow-sm active:scale-[0.98] border
+                    ${preflightDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  {isPreflightRunning ? <RefreshCw className="animate-spin mr-2" size={20} /> : preflightDone ? <Check className="mr-2" size={20}/> : <ShieldAlert className="mr-2 text-amber-500" size={20} />} 
+                  {preflightDone ? 'Pre-flight Checked' : 'Run Claim Pre-flight'}
+                </button>
                 <button onClick={handleDispatch} className="flex-1 md:flex-none flex justify-center items-center px-6 h-12 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-md shadow-blue-600/20 active:scale-[0.98]">
                   {isProcessing ? <RefreshCw className="animate-spin mr-2" size={20} /> : <Mail className="mr-2" size={20} />} Smart Invoices ({pendingCount})
                 </button>
-                <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleCSVUpload} />
-                <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none flex justify-center items-center px-6 h-12 rounded-xl font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition shadow-sm active:scale-[0.98]">
-                  {isReconciling ? <RefreshCw className="animate-spin mr-2" size={20} /> : <Wallet className="mr-2" size={20} />} Bank CSV Sync
-                </button>
               </div>
             </div>
+
+            {preflightDone && errorCount > 0 && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start animate-in slide-in-from-top-4">
+                <AlertTriangle className="text-amber-600 mr-3 shrink-0 mt-0.5" size={20}/>
+                <div>
+                  <h4 className="font-bold text-amber-900">Pre-flight Warning: Local Authority Claim Risks</h4>
+                  <p className="text-sm text-amber-800 mt-1">Found <strong>{errorCount}</strong> children with missing National Insurance numbers or invalid 30-hour codes. Fix these before submitting to the council to prevent clawbacks.</p>
+                </div>
+              </div>
+            )}
 
             <div className="bg-white rounded-3xl shadow-[0_4px_20px_-5px_rgba(0,0,0,0.05)] border border-slate-200 overflow-hidden">
               <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center flex-wrap gap-4">
@@ -462,19 +558,23 @@ export default function App() {
                   <tbody className="divide-y divide-slate-50">
                     {filtered.map(s => {
                       const isPaid = s.paymentStatus.includes('Paid');
+                      // 階段四 PP16: 若有錯誤則標記黃底
+                      const showWarningRow = preflightDone && s.hasFundingError;
+                      
                       return (
-                        <tr key={s.id} className={`hover:bg-slate-50/80 transition group ${isPaid ? 'bg-emerald-50/20' : ''}`}>
+                        <tr key={s.id} className={`hover:bg-slate-50/80 transition group ${isPaid && !showWarningRow ? 'bg-emerald-50/20' : ''} ${showWarningRow ? 'bg-amber-50/50 border-l-4 border-amber-400' : 'border-l-4 border-transparent'}`}>
                           <td className="px-6 py-4">
                             <div className="font-bold text-slate-900 flex items-center">
                               {s.name} 
                               {s.isSEND && <span className="ml-2 text-[10px] uppercase font-black bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-md" title="Special Educational Needs">SEND</span>}
+                              {showWarningRow && <span className="ml-2 text-[10px] uppercase font-black bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-md flex items-center"><AlertTriangle size={10} className="mr-1"/>Fix NI</span>}
                             </div>
                             <div className="text-xs text-slate-500 mt-1 font-medium flex items-center">
                               {s.tfcRef ? <><span className="w-2 h-2 rounded-full bg-blue-400 mr-1.5"></span>TFC: {s.tfcRef}</> : <><span className="w-2 h-2 rounded-full bg-slate-300 mr-1.5"></span>Self-Pay</>}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            {s.fundedHours > 0 ? <span className="font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">{s.fundedHours}h</span> : <span className="text-slate-300">-</span>}
+                            {s.fundedHours > 0 ? <span className={`font-bold px-2.5 py-1 rounded-lg ${showWarningRow ? 'text-amber-700 bg-amber-100' : 'text-blue-700 bg-blue-50'}`}>{s.fundedHours}h</span> : <span className="text-slate-300">-</span>}
                           </td>
                           <td className="px-6 py-4 text-center">
                             <span className="font-bold text-slate-700">{s.privateHours}h</span>
