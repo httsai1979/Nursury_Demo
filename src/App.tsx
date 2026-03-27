@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Mail, Clock, PoundSterling, FileText, AlertCircle, RefreshCw, 
-  Database, Sparkles, Check, Search, Upload, LayoutDashboard, 
+  Database, Sparkles, Check, Search, LayoutDashboard, 
   TrendingUp, Users, PieChart, ShieldCheck, Wallet, Bell,
   ChevronDown, MapPin, BadgeInfo, Star, FileOutput, X, Printer, Receipt,
   UserPlus, UserMinus, UserCheck, AlertTriangle, ShieldAlert, Activity, LineChart, Building,
-  ReceiptText, Calculator, Wand2, ArrowDownToLine, Smartphone
+  ReceiptText, Calculator, Wand2, ArrowDownToLine, Smartphone, Hourglass, Eye, EyeOff, CheckCircle
 } from 'lucide-react';
 
 const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzvIzwCL52hTRwn07LeE94gMEJzIte92Z-XuBMlrEm3THOESmKd98Lcl00Q_QGsb6W4tw/exec"; 
@@ -13,9 +13,8 @@ const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzvIzwCL
 // === 核心資料產生器 ===
 const generateMockData = (siteName) => {
   const baseNames = ["Oliver Smith", "Amelia Jones", "George Williams", "Isla Brown", "Harry Taylor", "Ava Davies", "Jack Evans", "Mia Thomas", "Noah Roberts", "Sophia Johnson"];
-  const rooms = ["Baby Room (0-2y)", "Toddler Room (2-3y)", "Pre-School (3-5y)"];
+  const rooms = ["Baby Room (Under 2s)", "Toddler Room (2-3y)", "Pre-School (3-5y)"];
   
-  // PP8: 多校區動態資料連動
   const siteModifier = siteName.includes('London') ? 0 : siteName.includes('Manchester') ? 1 : 2;
   const studentCount = 40 + (siteModifier * 10); 
 
@@ -24,27 +23,22 @@ const generateMockData = (siteName) => {
     const age = ((index + siteModifier) % 4) + 1; 
     const room = age < 2 ? rooms[0] : age < 3 ? rooms[1] : rooms[2];
     
-    // PP1: 混合計費基礎資料
     const totalHours = 60 + ((index + siteModifier) % 4) * 20;
     const fundedHours = age >= 3 ? (index % 2 === 0 ? 30 : 15) : 0; 
     const privateHours = Math.max(0, totalHours - fundedHours);
     
-    // PP11: 延展補助與學期制混合
-    const fundingType = index % 3 === 0 ? 'Term 38w' : 'Stretched 51w';
+    const fundingType = index % 3 === 0 ? 'Term Time (38w)' : 'Stretched (51w)';
     
     const rate = siteModifier === 0 ? 9.50 : 8.50; 
-    // PP7: 耗材與附加費
     const consumables = 40 + (index % 3) * 5; 
     const privateFee = privateHours * rate;
     const fundedClaim = fundedHours * (siteModifier === 0 ? 6.00 : 5.50); 
     
-    // PP6: SEND 特殊教育補助
     const isSEND = (index + siteModifier) % 10 === 0; 
     const sendFunding = isSEND ? 150 : 0; 
     
-    // PP16: 請款防呆錯誤模擬
     const hasFundingError = fundedHours > 0 && (index % 11 === 0);
-    const invoiceStatus = (index + siteModifier) % 5 === 1 ? 'Sent' : 'Pending';
+    const invoiceStatus = (index + siteModifier) % 5 === 1 ? 'Sent' : 'Draft';
     
     return {
       id: index + 1,
@@ -52,48 +46,45 @@ const generateMockData = (siteName) => {
       email: `parent${index + 1}@example.com`,
       totalHours, fundedHours, privateHours, rate, privateFee, fundedClaim, sendFunding, consumables,
       totalParentFee: privateFee + consumables,
-      // PP5: TFC 對帳參考碼
       tfcRef: index % 2 === 0 ? `TFC-CHIL${100+index+siteModifier}` : '',
       invoiceStatus,
-      paymentStatus: invoiceStatus === 'Sent' ? ((index + siteModifier) % 3 === 0 ? 'Unpaid' : 'Paid (BACS)') : 'Unpaid'
+      paymentStatus: invoiceStatus === 'Sent' ? ((index + siteModifier) % 3 === 0 ? 'Unpaid' : 'Paid (Bank Transfer)') : 'Unpaid'
     };
   });
 };
 
-// PP17: 供應商與零碎支出 (Mini-Ledger)
 const generateMockExpenses = () => [
-  { id: 1, date: 'Today', vendor: 'Tesco Business', category: 'Consumables', amount: 145.20, status: 'Reconciled' },
-  { id: 2, date: 'Yesterday', vendor: 'Nursery Supplies UK', category: 'Resources', amount: 320.50, status: 'Pending Review' },
-  { id: 3, date: '3 days ago', vendor: 'British Gas', category: 'Utilities', amount: 450.00, status: 'Reconciled' },
-  { id: 4, date: 'Last Week', vendor: 'Amazon UK', category: 'Consumables', amount: 85.90, status: 'Reconciled' }
+  { id: 1, date: 'Today', vendor: 'Tesco Business', category: 'Consumables', amount: 145.20, status: 'Logged' },
+  { id: 2, date: 'Yesterday', vendor: 'Nursery Supplies UK', category: 'Resources', amount: 320.50, status: 'Needs Review' },
+  { id: 3, date: '3 days ago', vendor: 'British Gas', category: 'Utilities', amount: 450.00, status: 'Logged' },
+  { id: 4, date: 'Last Week', vendor: 'Amazon UK', category: 'Consumables', amount: 85.90, status: 'Logged' }
 ];
 
 export default function App() {
-  // === 系統全域狀態 ===
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedSite, setSelectedSite] = useState('London (Chelsea)');
   const [students, setStudents] = useState(() => generateMockData(selectedSite));
   const [expenses, setExpenses] = useState(generateMockExpenses());
   
-  // === Modal 與互動狀態 ===
   const [invoiceModalData, setInvoiceModalData] = useState(null);
-  const [showAIExplain, setShowAIExplain] = useState(false); // PP15
-  const [staffData, setStaffData] = useState({ pool: 0, rooms: {} }); // PP2, PP12
+  const [showAIExplain, setShowAIExplain] = useState(false); 
+  const [staffData, setStaffData] = useState({ pool: 0, rooms: {} }); 
 
-  // === 進度列狀態 ===
   const [isProcessing, setIsProcessing] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
-  const [isChasing, setIsChasing] = useState(false); // PP9
-  const [isSyncingEYFS, setIsSyncingEYFS] = useState(false); // PP18
-  const [isPreflightRunning, setIsPreflightRunning] = useState(false); // PP16
+  const [isChasing, setIsChasing] = useState(false); 
+  const [isSyncingEYFS, setIsSyncingEYFS] = useState(false); 
+  const [isPreflightRunning, setIsPreflightRunning] = useState(false); 
   const [preflightDone, setPreflightDone] = useState(false);
-  const [isScanning, setIsScanning] = useState(false); // PP17
+  const [isScanning, setIsScanning] = useState(false); 
+
+  // 優化 1: GDPR 隱私防偷窺模式 (Privacy Mode)
+  const [privacyMode, setPrivacyMode] = useState(false);
 
   const [apiStatus, setApiStatus] = useState('loading'); 
   const [searchTerm, setSearchTerm] = useState('');
   const fileInputRef = useRef(null);
 
-  // === 資料同步 (模擬 API 切換校區) ===
   useEffect(() => {
     setApiStatus('loading');
     setPreflightDone(false); 
@@ -104,9 +95,9 @@ export default function App() {
       setStaffData({
         pool: 0,
         rooms: {
-          baby: { id: 'baby', name: 'Baby Room', desc: 'Ratio 1:3', children: 8, cap: 12, staff: 4, agencyStaff: 0, ratio: 3, revenue: 560, cost: 120, agencyCost: 240, color: 'rose' },
-          toddler: { id: 'toddler', name: 'Toddler Room', desc: 'Ratio 1:4', children: 12, cap: 12, staff: 3, agencyStaff: 0, ratio: 4, revenue: 840, cost: 120, agencyCost: 240, color: 'amber' },
-          preschool: { id: 'preschool', name: 'Pre-School', desc: 'Ratio 1:8', children: 22, cap: 24, staff: 2, agencyStaff: 0, ratio: 8, revenue: 1540, cost: 120, agencyCost: 240, color: 'emerald' }
+          baby: { id: 'baby', name: 'Baby Room (Under 2s)', desc: 'Statutory 1:3', children: 8, cap: 12, staff: 4, agencyStaff: 0, ratio: 3, revenue: 560, cost: 120, agencyCost: 240, color: 'rose' },
+          toddler: { id: 'toddler', name: 'Toddler Room (2-3y)', desc: 'Statutory 1:4', children: 12, cap: 12, staff: 3, agencyStaff: 0, ratio: 4, revenue: 840, cost: 120, agencyCost: 240, color: 'amber' },
+          preschool: { id: 'preschool', name: 'Pre-School (3-5y)', desc: 'Statutory 1:8', children: 22, cap: 24, staff: 2, agencyStaff: 0, ratio: 8, revenue: 1540, cost: 120, agencyCost: 240, color: 'emerald' }
         }
       });
       setApiStatus('demo_mode');
@@ -114,9 +105,13 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [selectedSite]);
 
-  // === 操作邏輯 (Action Handlers) ===
-  
-  // PP2: 浮動人力控制
+  // === 輔助函數：隱私金額格式化 ===
+  const formatMoney = (amount, decimals = 2) => {
+    if (privacyMode) return '£***';
+    return `£${amount.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+  };
+
+  // === 操作邏輯 (彈性與自動化) ===
   const handleRemoveStaff = (roomId) => {
     setStaffData(prev => {
       const newRooms = { ...prev.rooms };
@@ -143,7 +138,36 @@ export default function App() {
     });
   };
 
-  // PP12: 高價派遣員工聘用
+  // 優化 3: AI 自動排班 (Auto-Fix Ratios) - 保留彈性的自動化
+  const handleAutoFixRatios = () => {
+    setStaffData(prev => {
+      let currentPool = prev.pool;
+      const newRooms = { ...prev.rooms };
+      
+      // 1. 先把過度排班 (Overstaffed) 的人抽出來放回 Pool
+      Object.keys(newRooms).forEach(roomId => {
+          const room = newRooms[roomId];
+          const reqStaff = Math.ceil(room.children / room.ratio);
+          while (room.staff > reqStaff) {
+              room.staff -= 1;
+              currentPool += 1;
+          }
+      });
+
+      // 2. 把 Pool 的人補給違法 (Non-compliant) 的房間
+      Object.keys(newRooms).forEach(roomId => {
+        const room = newRooms[roomId];
+        const reqStaff = Math.ceil(room.children / room.ratio);
+        while ((room.staff + room.agencyStaff) < reqStaff && currentPool > 0) {
+          room.staff += 1;
+          currentPool -= 1;
+        }
+      });
+      return { pool: currentPool, rooms: newRooms };
+    });
+    alert('AI has redistributed staff to ensure statutory compliance where possible.');
+  };
+
   const handleAddAgencyStaff = (roomId) => {
     setStaffData(prev => {
       const newRooms = { ...prev.rooms };
@@ -152,64 +176,64 @@ export default function App() {
     });
   };
 
-  // PP16: 補助預檢
   const handlePreflightCheck = () => {
     setIsPreflightRunning(true);
     setTimeout(() => { setIsPreflightRunning(false); setPreflightDone(true); }, 2000);
   };
 
-  // 基礎發單
   const handleDispatch = () => {
     setIsProcessing(true);
-    setTimeout(() => { setStudents(students.map(s => ({ ...s, invoiceStatus: 'Sent' }))); setIsProcessing(false); alert('已向家長發送智慧帳單。'); }, 1500);
+    setTimeout(() => { setStudents(students.map(s => ({ ...s, invoiceStatus: 'Sent' }))); setIsProcessing(false); alert('Invoices sent to parents.'); }, 1500);
   };
 
-  // PP5: 銀行 CSV 同步
   const handleCSVUpload = (e) => {
     if (!e.target.files?.[0]) return;
     setIsReconciling(true);
-    setTimeout(() => { setStudents(students.map(s => s.paymentStatus === 'Unpaid' && s.tfcRef !== '' ? { ...s, paymentStatus: 'Paid (TFC Auto)' } : s)); setIsReconciling(false); alert('對帳完成！已自動匹配 TFC 付款紀錄。'); if(fileInputRef.current) fileInputRef.current.value = ''; }, 1500);
+    setTimeout(() => { setStudents(students.map(s => s.paymentStatus === 'Unpaid' && s.tfcRef !== '' ? { ...s, paymentStatus: 'Paid (TFC Bank)' } : s)); setIsReconciling(false); alert('Bank reconciliation complete.'); if(fileInputRef.current) fileInputRef.current.value = ''; }, 1500);
   };
 
-  // PP9: 呆帳追討
+  // 優化 3: 手動覆寫付款狀態 (Manual Override)
+  const handleManualPayment = (id) => {
+    setStudents(students.map(s => s.id === id ? { ...s, paymentStatus: 'Paid (Cash/Manual)' } : s));
+  };
+
   const handleChaseDebt = () => {
     setIsChasing(true);
-    setTimeout(() => { alert(`已自動向 ${unpaidCount} 位家長發送溫和的繳款提醒郵件與簡訊！`); setIsChasing(false); }, 1000);
+    setTimeout(() => { 
+      alert(`Automated BACS reminders sent to ${unpaidCount} parents. Funds will clear directly into your nursery bank account.`); 
+      setIsChasing(false); 
+    }, 1200);
   };
 
-  // PP18: 外部軟體同步
   const handleSyncEYFS = () => {
     setIsSyncingEYFS(true);
-    setTimeout(() => { alert('API 同步完成！已從 Blossom/Famly 獲取最新出席紀錄。'); setIsSyncingEYFS(false); }, 1500);
+    setTimeout(() => { alert('Attendance synced successfully.'); setIsSyncingEYFS(false); }, 1500);
   };
 
-  // PP17: AI 收據掃描
   const handleScanReceipt = () => {
     setIsScanning(true);
     setTimeout(() => { 
-      setExpenses([{ id: Date.now(), date: 'Just Now', vendor: 'Smart AI Scan', category: 'Consumables', amount: 56.20, status: 'Reconciled' }, ...expenses]);
+      setExpenses([{ id: Date.now(), date: 'Just Now', vendor: 'Smart AI Scan', category: 'Consumables', amount: 56.20, status: 'Logged' }, ...expenses]);
       setIsScanning(false); 
-      alert('AI 自動辨識收據完成，已登錄至小分類帳！'); 
+      alert('Receipt processed.'); 
     }, 1500);
   };
 
-  // PP10: 匯出稽核軌跡
   const handleExportLog = () => {
     const headers = ["Child ID", "Name", "Funding Type", "Total Hours", "Total Parent Fee (£)", "TFC Ref", "Payment Status"];
     const csvRows = students.map(s => [s.id, `"${s.name}"`, s.fundingType, s.totalHours, s.totalParentFee, s.tfcRef || "N/A", `"${s.paymentStatus}"`].join(","));
-    downloadCSV(headers, csvRows, `Audit_Trail_${selectedSite}`);
+    downloadCSV(headers, csvRows, `Compliance_Log_${selectedSite}`);
   };
 
-  // PP19: 匯出銀行級損益表
   const handleExportBankPnL = () => {
     const headers = ["Category", "Amount (£)", "Percentage", "Notes"];
     const csvRows = [
       ["Gross Revenue", totalRev.toFixed(2), "100%", "Includes Private & Funded"],
       ["Labour Cost", (totalRev * 0.62).toFixed(2), "62%", "Salaries & NI"],
       ["Overheads & Rent", (totalRev * 0.15).toFixed(2), "15%", "Fixed Costs"],
-      ["EBITDA", (totalRev * 0.23).toFixed(2), "23%", "Bank Ready Metric"]
+      ["Est. Profit", (totalRev * 0.23).toFixed(2), "23%", "Pre-tax"]
     ].map(row => row.join(","));
-    downloadCSV(headers, csvRows, `Bank_Ready_PnL_${selectedSite}`);
+    downloadCSV(headers, csvRows, `Financial_Report_${selectedSite}`);
   };
 
   const downloadCSV = (headers, rows, filename) => {
@@ -236,10 +260,15 @@ export default function App() {
   const unpaidAmount = students.filter(s => s.paymentStatus === 'Unpaid' && s.invoiceStatus === 'Sent').reduce((acc, curr) => acc + curr.totalParentFee, 0);
   const errorCount = students.filter(s => s.hasFundingError).length;
 
-  const estGrossMargin = selectedSite.includes('London') ? '24.5%' : selectedSite.includes('Manchester') ? '28.1%' : '21.0%';
+  const estGrossMargin = selectedSite.includes('London') ? 24.5 : selectedSite.includes('Manchester') ? 28.1 : 21.0;
   const occupancyRate = selectedSite.includes('London') ? '82%' : selectedSite.includes('Manchester') ? '94%' : '76%';
-  // PP20: 退場估值換算
-  const estimatedValuation = (totalRev * 12 * parseFloat(estGrossMargin)/100 * 4).toLocaleString(undefined, {maximumFractionDigits:0}); 
+  
+  const currentBankBalance = selectedSite.includes('London') ? 14200 : selectedSite.includes('Manchester') ? 28500 : 9400;
+  const upcomingPayroll = totalRev * 0.62; 
+  const liquidityShortfall = currentBankBalance < upcomingPayroll ? upcomingPayroll - currentBankBalance : 0;
+  const daysToFunding = selectedSite.includes('London') ? 12 : selectedSite.includes('Manchester') ? 5 : 18;
+
+  const estimatedValuation = (totalRev * 12 * (estGrossMargin/100) * 4); 
 
   // === 畫面渲染路由器 ===
   const renderContent = () => {
@@ -247,7 +276,7 @@ export default function App() {
       return (
         <div className="flex items-center justify-center h-64">
           <RefreshCw className="animate-spin text-blue-500 mr-3" size={32} />
-          <span className="text-slate-500 font-medium">Syncing data...</span>
+          <span className="text-slate-500 font-medium">Syncing data safely...</span>
         </div>
       );
     }
@@ -258,20 +287,19 @@ export default function App() {
           <div className="space-y-6 pb-24 md:pb-6 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-2 mb-2">
               <div>
-                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">CFO Overview</h3>
+                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Financial Overview</h3>
                 <span className="text-sm text-slate-500 font-medium">30-Day Forecast for {selectedSite}</span>
               </div>
               <div className="flex items-center text-sm font-medium text-slate-500 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm w-fit">
-                <Clock size={14} className="mr-1.5" /> Last updated: Just now
+                <Clock size={14} className="mr-1.5" /> Updated: Just now
               </div>
             </div>
             
-            {/* KPI 頂部資料卡 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-4 md:gap-6">
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col justify-between">
                 <div className="flex justify-between items-start">
                   <div className="bg-blue-50 p-3 rounded-2xl text-blue-600"><TrendingUp size={24} /></div>
-                  <div className="text-right"><p className="text-sm text-slate-500 font-medium">Est. Gross Margin</p><p className="text-3xl font-bold text-slate-900 mt-1">{estGrossMargin}</p></div>
+                  <div className="text-right"><p className="text-sm text-slate-500 font-medium">Est. Gross Margin</p><p className="text-3xl font-bold text-slate-900 mt-1">{privacyMode ? '***' : `${estGrossMargin}%`}</p></div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between"><span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded-md">+2.1% vs Prev</span><span className="text-xs text-slate-400">Healthy</span></div>
               </div>
@@ -287,76 +315,98 @@ export default function App() {
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col justify-between">
                 <div className="flex justify-between items-start">
                   <div className="bg-emerald-50 p-3 rounded-2xl text-emerald-600"><PoundSterling size={24} /></div>
-                  <div className="text-right"><p className="text-sm text-slate-500 font-medium">Total Income</p><p className="text-3xl font-bold text-emerald-700 mt-1">£{totalRev.toLocaleString(undefined, {maximumFractionDigits:0})}</p></div>
+                  <div className="text-right"><p className="text-sm text-slate-500 font-medium">Total Income</p><p className="text-3xl font-bold text-emerald-700 mt-1">{formatMoney(totalRev, 0)}</p></div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-slate-50 flex flex-col gap-1">
-                  <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Parents</span><span className="text-slate-700">£{totalParentRev.toLocaleString(undefined, {maximumFractionDigits:0})}</span></div>
-                  <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Local Auth.</span><span className="text-slate-700">£{totalFundedRev.toLocaleString(undefined, {maximumFractionDigits:0})}</span></div>
+                  <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Parents</span><span className="text-slate-700">{formatMoney(totalParentRev, 0)}</span></div>
+                  <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Local Authority</span><span className="text-slate-700">{formatMoney(totalFundedRev, 0)}</span></div>
                 </div>
               </div>
 
-              {/* PP9: 呆帳警告區塊 */}
               <div className="bg-rose-50/50 rounded-3xl p-6 border border-rose-100 flex flex-col justify-between relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
                 <div className="flex justify-between items-start relative z-10">
                   <div className="bg-rose-100 p-3 rounded-2xl text-rose-600"><AlertCircle size={24}/></div>
-                  <div className="text-right"><p className="text-sm text-rose-700/80 font-medium">Cashflow at Risk</p><p className="text-3xl font-bold text-rose-700 mt-1">£{unpaidAmount.toLocaleString()}</p></div>
+                  <div className="text-right"><p className="text-sm text-rose-700/80 font-medium">Cashflow at Risk</p><p className="text-3xl font-bold text-rose-700 mt-1">{formatMoney(unpaidAmount, 0)}</p></div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-rose-100/50 flex items-center justify-between relative z-10">
                   <span className="text-xs text-rose-700 font-bold">{unpaidCount} Overdue</span>
-                  <button onClick={handleChaseDebt} disabled={unpaidCount === 0 || isChasing} className={`text-xs px-3 py-1.5 rounded-full font-semibold flex items-center transition shadow-sm ${unpaidCount === 0 ? 'bg-slate-200 text-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
-                    {isChasing ? <RefreshCw size={12} className="animate-spin mr-1"/> : null}Chase
+                  <button 
+                    onClick={handleChaseDebt} 
+                    disabled={unpaidCount === 0 || isChasing} 
+                    className={`text-xs px-3 py-1.5 rounded-full font-semibold flex items-center transition shadow-sm ${unpaidCount === 0 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-rose-600 text-white hover:bg-rose-700 active:scale-95'}`}
+                  >
+                    {isChasing ? <RefreshCw size={12} className="animate-spin mr-1"/> : <Mail size={12} className="mr-1"/>}
+                    Chase Reminders
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* PP13 & PP19/20: Waitlist 漏斗與企業估值 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl -mr-10 -mt-10"></div>
-                <div className="relative z-10">
-                  <div className="flex items-center mb-4 text-indigo-200"><Activity size={20} className="mr-2"/> <h4 className="font-bold">Waitlist Pipeline (90 Days)</h4></div>
-                  <div className="flex justify-between items-end mb-6">
-                    <div><p className="text-xs text-indigo-300 uppercase">Future Revenue</p><p className="text-3xl font-black">£24,500</p></div>
-                    <div className="text-right"><p className="text-lg font-bold text-emerald-400">+12 Children</p></div>
+              <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden flex flex-col">
+                <div className="absolute bottom-0 right-0 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mb-10"></div>
+                <div className="relative z-10 flex-1">
+                  <div className="flex items-center mb-4 text-slate-300"><Hourglass size={20} className="mr-2"/> <h4 className="font-bold">Cashflow Survival Radar</h4></div>
+                  
+                  <div className="flex justify-between items-end mb-4">
+                    <div>
+                      <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Bank Balance</p>
+                      <p className="text-3xl font-black text-white">{formatMoney(currentBankBalance, 0)}</p>
+                    </div>
+                    <div className="text-right">
+                       <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Upcoming Payroll</p>
+                       <p className="text-lg font-bold text-amber-400">{formatMoney(upcomingPayroll, 0)}</p>
+                    </div>
                   </div>
-                  <div className="h-2 bg-slate-800 rounded-full flex overflow-hidden">
-                     <div className="bg-indigo-500" style={{width: '60%'}}></div><div className="bg-amber-500" style={{width: '30%'}}></div><div className="bg-emerald-500" style={{width: '10%'}}></div>
-                  </div>
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-2 font-bold uppercase"><span>Baby (60%)</span><span>Toddler (30%)</span><span>Pre (10%)</span></div>
+
+                  {liquidityShortfall > 0 ? (
+                    <div className="mt-4 p-3 bg-rose-500/20 border border-rose-500/30 rounded-xl flex items-start">
+                      <AlertTriangle size={16} className="text-rose-400 mr-2 shrink-0 mt-0.5"/>
+                      <p className="text-xs text-rose-200 leading-relaxed">
+                        <strong>Warning: {formatMoney(liquidityShortfall, 0)} shortfall</strong> expected before payroll. Local Authority funding ({formatMoney(totalFundedRev, 0)}) arrives in <strong className="text-white">{daysToFunding} days</strong>. Chase overdue debts via BACS or <a href="#" className="underline font-bold hover:text-white">explore 14-day bridge finance</a>. {/* 優化 5: 變現機制 C (資金過橋推薦) */}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 p-3 bg-emerald-500/20 border border-emerald-500/30 rounded-xl flex items-start">
+                      <Check size={16} className="text-emerald-400 mr-2 shrink-0 mt-0.5"/>
+                      <p className="text-xs text-emerald-200 leading-relaxed">
+                        Cashflow is healthy. Your current balance covers the upcoming payroll. Local Authority funding arrives in {daysToFunding} days to replenish reserves.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden flex flex-col">
-                <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-10 -mb-10"></div>
-                <div className="relative z-10 flex-1">
-                  <div className="flex items-center mb-4 text-slate-300"><Building size={20} className="mr-2"/> <h4 className="font-bold">Exit Valuation Engine</h4></div>
-                  <div className="flex justify-between items-end mb-4">
-                    <div><p className="text-xs text-slate-400 uppercase">Est. Market Value</p><p className="text-3xl font-black text-emerald-400">£{estimatedValuation}</p></div>
-                    <span className="px-2 py-1 bg-slate-700/50 rounded-lg text-xs font-bold text-slate-300 border border-slate-600">4x EBITDA</span>
+              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl -mr-10 -mt-10"></div>
+                <div className="relative z-10 flex flex-col h-full">
+                  <div className="flex items-center mb-4 text-indigo-200"><Activity size={20} className="mr-2"/> <h4 className="font-bold">Future Admissions (Waitlist)</h4></div>
+                  <div className="flex justify-between items-end mb-6">
+                    <div><p className="text-xs text-indigo-300 uppercase">Potential Revenue</p><p className="text-3xl font-black">{formatMoney(24500, 0)}</p></div>
+                    <div className="text-right"><p className="text-lg font-bold text-emerald-400">+12 Children</p></div>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed mb-4">Based on your current run-rate revenue and {estGrossMargin} gross margin. <strong className="text-white block mt-1">💡 Tip: Increase occupancy by 3% to unlock an extra £120k in valuation.</strong></p>
-                </div>
-                <div className="mt-auto relative z-10 pt-4 border-t border-slate-700">
-                   <button onClick={handleExportBankPnL} className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 py-2.5 rounded-xl text-sm font-bold flex justify-center items-center transition">
-                     <ArrowDownToLine size={16} className="mr-2"/> Export Bank-Ready P&L
-                   </button>
+                  
+                  <div className="mt-auto">
+                    <div className="h-2 bg-slate-800 rounded-full flex overflow-hidden mb-2">
+                       <div className="bg-indigo-500" style={{width: '60%'}}></div><div className="bg-amber-500" style={{width: '30%'}}></div><div className="bg-emerald-500" style={{width: '10%'}}></div>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase"><span>Baby (60%)</span><span>Toddler (30%)</span><span>Pre (10%)</span></div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* PP4: 營收與勞動成本監控 */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
                <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm">
                   <h4 className="text-lg font-bold text-slate-900 mb-6 flex items-center"><PieChart className="mr-2 text-slate-400" size={20}/> Income vs Labour Cost ({selectedSite})</h4>
                   <div className="space-y-6">
                      <div>
-                       <div className="flex justify-between text-sm mb-2"><span className="text-emerald-700 font-bold">Total Expected Income</span><span className="font-bold text-slate-900">£{totalRev.toLocaleString(undefined, {maximumFractionDigits:0})}</span></div>
+                       <div className="flex justify-between text-sm mb-2"><span className="text-emerald-700 font-bold">Total Expected Income</span><span className="font-bold text-slate-900">{formatMoney(totalRev, 0)}</span></div>
                        <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden"><div className="bg-emerald-500 h-full rounded-full transition-all duration-1000" style={{width: '100%'}}></div></div>
                      </div>
                      <div>
-                       <div className="flex justify-between text-sm mb-2"><span className="text-amber-600 font-bold">Est. Labour Costs (Wages/NI/Pension)</span><span className="font-bold text-slate-900">£{(totalRev * 0.62).toLocaleString(undefined, {maximumFractionDigits:0})}</span></div>
+                       <div className="flex justify-between text-sm mb-2"><span className="text-amber-600 font-bold">Est. Labour Costs (Wages/NI/Pension)</span><span className="font-bold text-slate-900">{formatMoney(totalRev * 0.62, 0)}</span></div>
                        <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden relative">
                          <div className="bg-amber-400 h-full rounded-full transition-all duration-1000" style={{width: '62%'}}></div>
                          <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{left: '65%'}} title="Safe Target: 65%"></div>
@@ -366,19 +416,19 @@ export default function App() {
                   </div>
                </div>
                
-               <div className="bg-gradient-to-br from-[#002244] to-[#003366] p-6 md:p-8 rounded-3xl shadow-sm text-white relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl -mr-20 -mt-20"></div>
-                  <h4 className="text-lg font-bold text-blue-50 mb-6 flex items-center relative z-10"><Sparkles size={20} className="mr-2 text-amber-400"/> AI CFO Insights</h4>
-                  <ul className="space-y-5 text-sm text-slate-300 relative z-10">
-                    <li className="flex items-start bg-white/5 p-4 rounded-2xl border border-white/10">
-                      <Star size={18} className="text-emerald-400 mr-3 mt-0.5 shrink-0"/>
-                      <span><strong className="text-white block mb-1">Funding Shift Ahead:</strong> 3 children are turning 3 next month. Forecast updated.</span>
-                    </li>
-                    <li className="flex items-start bg-white/5 p-4 rounded-2xl border border-white/10">
-                      <Wallet size={18} className="text-blue-400 mr-3 mt-0.5 shrink-0"/>
-                      <span><strong className="text-white block mb-1">Cashflow Sync:</strong> Open Banking detected £3,400 TFC clearing tomorrow.</span>
-                    </li>
-                  </ul>
+               <div className="bg-gradient-to-br from-slate-100 to-slate-200 p-6 md:p-8 rounded-3xl shadow-sm text-slate-800 relative overflow-hidden flex flex-col justify-between border border-slate-300">
+                  <div>
+                    <h4 className="text-lg font-bold text-slate-900 mb-2 flex items-center"><Building size={20} className="mr-2 text-slate-500"/> Nursery Valuation Estimate</h4>
+                    <p className="text-xs text-slate-500 mb-6">Based on your current {privacyMode ? '***' : `${estGrossMargin}%`} gross margin and run-rate.</p>
+                    <div className="flex justify-between items-end mb-4">
+                      <div><p className="text-xs text-slate-500 uppercase font-bold">Market Value</p><p className="text-3xl font-black text-slate-900">{formatMoney(estimatedValuation, 0)}</p></div>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-slate-300">
+                     <button onClick={handleExportBankPnL} className="w-full bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 py-2.5 rounded-xl text-sm font-bold flex justify-center items-center transition shadow-sm">
+                       <ArrowDownToLine size={16} className="mr-2"/> Export Financial Report
+                     </button>
+                  </div>
                </div>
             </div>
           </div>
@@ -389,69 +439,64 @@ export default function App() {
           <div className="pb-24 md:pb-6 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 mb-6">
               <div>
-                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Funding Decoder</h3>
-                <span className="text-sm text-slate-500 font-medium">Hybrid Billing & Sync</span>
+                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Invoices & Funding</h3>
+                <span className="text-sm text-slate-500 font-medium">Manage parent bills and local authority claims</span>
               </div>
-              {/* PP18: API 同步按鈕 */}
               <button onClick={handleSyncEYFS} disabled={isSyncingEYFS} className="flex items-center px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl font-bold hover:bg-indigo-100 transition active:scale-95">
-                <RefreshCw size={16} className={`mr-2 ${isSyncingEYFS ? 'animate-spin' : ''}`}/> Sync EYFS Tracker (Famly/Blossom)
+                <RefreshCw size={16} className={`mr-2 ${isSyncingEYFS ? 'animate-spin' : ''}`}/> Sync Registers (Famly/Blossom)
               </button>
             </div>
 
-            {/* 控制列區塊 */}
-            <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col lg:flex-row justify-between gap-3">
-              <div className="relative w-full lg:w-80 h-12">
+            <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col xl:flex-row justify-between gap-3">
+              <div className="relative w-full xl:w-80 h-12 shrink-0">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                 <input type="text" placeholder="Search child or TFC Ref..." className="w-full h-full pl-12 pr-4 bg-slate-50 border-0 rounded-xl text-sm outline-none" onChange={(e) => setSearchTerm(e.target.value)} />
               </div>
-              <div className="flex flex-col md:flex-row gap-3 p-2 lg:p-0">
+              <div className="flex flex-col md:flex-row gap-3 p-2 xl:p-0 w-full xl:w-auto">
                 <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleCSVUpload} />
-                <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none flex justify-center items-center px-4 h-12 rounded-xl font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition shadow-sm active:scale-[0.98]">
-                  <Wallet className="mr-2" size={18} /> Bank Sync
+                <button onClick={() => fileInputRef.current?.click()} className="flex-1 xl:flex-none flex justify-center items-center px-4 h-12 rounded-xl font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition shadow-sm active:scale-[0.98] whitespace-nowrap">
+                  <Wallet className="mr-2" size={18} /> Sync Bank CSV
                 </button>
-                {/* PP16: 防呆預檢按鈕 */}
-                <button onClick={handlePreflightCheck} disabled={isPreflightRunning || preflightDone} className={`flex-1 flex justify-center items-center px-5 h-12 rounded-xl font-bold border transition ${preflightDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+                <button onClick={handlePreflightCheck} disabled={isPreflightRunning || preflightDone} className={`flex-1 xl:flex-none flex justify-center items-center px-5 h-12 rounded-xl font-bold border transition whitespace-nowrap ${preflightDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'}`}>
                   {isPreflightRunning ? <RefreshCw className="animate-spin mr-2" size={18} /> : preflightDone ? <Check className="mr-2" size={18}/> : <ShieldAlert className="mr-2 text-amber-500" size={18} />} 
-                  Claim Pre-flight
+                  Check Funding Errors
                 </button>
-                <button onClick={handleDispatch} className="flex-1 flex justify-center items-center px-6 h-12 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm">
-                  Smart Invoices
+                <button onClick={handleDispatch} className="flex-1 xl:flex-none flex justify-center items-center px-6 h-12 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm whitespace-nowrap">
+                  Send Invoices
                 </button>
               </div>
             </div>
 
-            {/* PP16: 預檢錯誤警示橫幅 */}
             {preflightDone && errorCount > 0 && (
               <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start animate-in slide-in-from-top-4">
                 <AlertTriangle className="text-amber-600 mr-3 shrink-0 mt-0.5" size={20}/>
                 <div>
-                  <h4 className="font-bold text-amber-900">Pre-flight Warning: Local Authority Claim Risks</h4>
-                  <p className="text-sm text-amber-800 mt-1">Found <strong>{errorCount}</strong> children with missing National Insurance numbers or invalid codes. Fix these before submitting to prevent clawbacks.</p>
+                  <h4 className="font-bold text-amber-900">Action Required: Local Authority Claim Risks</h4>
+                  <p className="text-sm text-amber-800 mt-1">Found <strong>{errorCount}</strong> children with missing National Insurance numbers or invalid codes. Please fix these before submitting to prevent clawbacks.</p>
                 </div>
               </div>
             )}
 
-            {/* 帳單總表 Ledger */}
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
               <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center flex-wrap gap-4">
-                <h3 className="font-bold text-slate-800 flex items-center text-sm uppercase tracking-wider"><ShieldCheck size={18} className="mr-2 text-blue-500"/> Invoice Ledger</h3>
+                <h3 className="font-bold text-slate-800 flex items-center text-sm uppercase tracking-wider"><FileText size={18} className="mr-2 text-slate-400"/> Parent Accounts</h3>
                 <div className="flex items-center gap-4">
-                  <span className="text-xs font-bold text-emerald-600 flex items-center bg-emerald-50 px-2 py-1 rounded-md hidden md:flex"><BadgeInfo size={14} className="mr-1"/> Audit Trail Active</span>
+                  <span className="text-xs font-bold text-emerald-600 flex items-center bg-emerald-50 px-2 py-1 rounded-md hidden sm:flex"><BadgeInfo size={14} className="mr-1"/> Compliant Record</span>
                   <button onClick={handleExportLog} className="text-xs font-bold text-white bg-slate-800 px-4 py-2 rounded-lg flex items-center hover:bg-slate-700 transition active:scale-[0.98] shadow-sm">
-                    <FileOutput size={14} className="mr-2" /> Export CSV Log
+                    <FileOutput size={14} className="mr-2" /> Export to Excel
                   </button>
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm whitespace-nowrap">
+                <table className="w-full text-left text-sm whitespace-nowrap min-w-[900px]">
                   <thead className="bg-white border-b border-slate-100">
                     <tr className="text-slate-400 text-xs uppercase">
-                      <th className="px-6 py-4 font-bold">Child Details</th>
+                      <th className="px-6 py-4 font-bold">Child Name</th>
                       <th className="px-6 py-4 font-bold text-center">Funding Plan</th>
                       <th className="px-6 py-4 font-bold text-center">Total Hrs</th>
-                      <th className="px-6 py-4 font-bold text-center">Top-ups</th>
-                      <th className="px-6 py-4 font-bold text-right">Parent Total</th>
-                      <th className="px-6 py-4 font-bold text-center">Payment</th>
+                      <th className="px-6 py-4 font-bold text-center">Meals/Extras</th>
+                      <th className="px-6 py-4 font-bold text-right">Parent Pays</th>
+                      <th className="px-6 py-4 font-bold text-center">Status</th>
                       <th className="px-6 py-4 font-bold text-center">Actions</th>
                     </tr>
                   </thead>
@@ -464,14 +509,12 @@ export default function App() {
                           <td className="px-6 py-4">
                             <div className="font-bold text-slate-900 flex items-center">
                               {s.name} 
-                              {/* PP6: SEND 標記 */}
                               {s.isSEND && <span className="ml-2 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-md font-black uppercase">SEND</span>}
                               {showWarningRow && <span className="ml-2 text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-md font-black uppercase flex items-center"><AlertTriangle size={10} className="mr-1"/>Fix NI</span>}
                             </div>
                             <div className="text-xs text-slate-500 mt-1 font-medium">{s.tfcRef ? `TFC: ${s.tfcRef}` : 'Self-Pay'}</div>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            {/* PP11: Stretched/Term 混合標籤 */}
                             {s.fundedHours > 0 ? (
                                <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${showWarningRow ? 'bg-amber-100 text-amber-800' : s.fundingType.includes('51w') ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
                                   {s.fundingType} ({s.fundedHours}h)
@@ -479,17 +522,25 @@ export default function App() {
                             ) : <span className="text-slate-300">-</span>}
                           </td>
                           <td className="px-6 py-4 text-center font-bold text-slate-700">{s.totalHours}h</td>
-                          <td className="px-6 py-4 text-center text-slate-500">£{s.consumables}</td>
-                          <td className="px-6 py-4 text-right font-black text-slate-900 text-base">£{s.totalParentFee.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-center text-slate-500">{formatMoney(s.consumables)}</td>
+                          <td className="px-6 py-4 text-right font-black text-slate-900 text-base">{formatMoney(s.totalParentFee)}</td>
                           <td className="px-6 py-4 text-center">
                             {isPaid 
-                              ? <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100"><Sparkles size={14} className="mr-1"/>{s.paymentStatus}</span> 
+                              ? <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100"><Sparkles size={14} className="mr-1"/>{s.paymentStatus}</span> 
                               : <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-100"><AlertCircle size={14} className="mr-1"/>Unpaid</span>}
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <button onClick={() => { setInvoiceModalData(s); setShowAIExplain(false); }} className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-200 hover:text-blue-600 transition shadow-sm active:scale-95">
-                              <Receipt size={14} className="mr-1.5"/> View PDF
-                            </button>
+                            <div className="flex justify-center gap-2">
+                                {/* 優化 3: 手動覆寫標記為已付款按鈕 */}
+                                {!isPaid && (
+                                   <button onClick={() => handleManualPayment(s.id)} title="Mark as Paid (Cash/Manual)" className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition">
+                                     <CheckCircle size={16}/>
+                                   </button>
+                                )}
+                                <button onClick={() => { setInvoiceModalData(s); setShowAIExplain(false); }} className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition shadow-sm active:scale-95">
+                                  <Receipt size={14} className="mr-1.5"/> Invoice
+                                </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -502,21 +553,27 @@ export default function App() {
         );
 
       case 'optimisation':
-        // PP2, PP3, PP12: 互動式師生比優化大腦
         const { pool, rooms } = staffData;
         return (
           <div className="space-y-6 pb-24 md:pb-6 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 mb-4">
               <div>
-                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Interactive Optimisation</h3>
-                <span className="text-sm text-slate-500 font-medium">Live Ratio Engine for {selectedSite}</span>
+                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Staff Ratios & Rooms</h3>
+                <span className="text-sm text-slate-500 font-medium">Ensure statutory compliance and avoid overstaffing</span>
               </div>
-              <div className={`flex items-center px-4 py-2.5 rounded-2xl font-bold border-2 transition-all shadow-sm ${pool > 0 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 scale-105' : 'bg-white border-slate-200 text-slate-500'}`}>
-                 <Users size={18} className="mr-2" /> Floating Pool: <span className="text-xl ml-2 font-black">{pool}</span>
+              
+              <div className="flex flex-col sm:flex-row gap-3 items-center">
+                 {/* 優化 3: AI 自動調整按鈕 (Auto-Fix Ratios) */}
+                 <button onClick={handleAutoFixRatios} className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition shadow-sm">
+                    <Wand2 size={16} className="mr-2"/> Auto-Fix Ratios
+                 </button>
+                 <div className={`flex items-center px-4 py-2.5 rounded-xl font-bold border-2 transition-all shadow-sm ${pool > 0 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 scale-105' : 'bg-white border-slate-200 text-slate-500'}`}>
+                    <Users size={18} className="mr-2" /> Available Staff: <span className="text-xl ml-2 font-black">{pool}</span>
+                 </div>
               </div>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               {Object.entries(rooms).map(([roomId, room]) => {
                 const totalStaffInRoom = room.staff + room.agencyStaff;
                 const reqStaff = Math.ceil(room.children / room.ratio);
@@ -525,7 +582,7 @@ export default function App() {
                 
                 let statusBadge = null;
                 if (totalStaffInRoom < reqStaff) {
-                  statusBadge = <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded-md flex items-center animate-pulse"><AlertTriangle size={12} className="mr-1"/>Non-Compliant (-{reqStaff - totalStaffInRoom})</span>;
+                  statusBadge = <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded-md flex items-center animate-pulse"><AlertTriangle size={12} className="mr-1"/>Non-Compliant (Need {reqStaff - totalStaffInRoom} more)</span>;
                 } else if (isOverstaffed) {
                   statusBadge = <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-md">Overstaffed (+{totalStaffInRoom - reqStaff})</span>;
                 } else {
@@ -534,7 +591,7 @@ export default function App() {
 
                 const totalLabourCost = (room.staff * room.cost) + (room.agencyStaff * room.agencyCost);
                 const profitMargin = (((room.revenue - totalLabourCost) / room.revenue) * 100).toFixed(1);
-                const marginColor = profitMargin < 10 ? 'text-rose-600' : profitMargin < 20 ? 'text-amber-600' : 'text-emerald-600';
+                const marginColor = profitMargin < 0 ? 'text-rose-600' : profitMargin < 15 ? 'text-amber-600' : 'text-emerald-600';
 
                 const themeClasses = {
                   rose: { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-950', badgeBg: 'bg-rose-200/80', badgeText: 'text-rose-900' },
@@ -544,32 +601,32 @@ export default function App() {
                 const t = themeClasses[room.color];
 
                 return (
-                  <div key={roomId} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col transition-all hover:shadow-lg">
+                  <div key={roomId} className={`bg-white rounded-3xl shadow-sm border overflow-hidden flex flex-col transition-all hover:shadow-lg ${profitMargin < 0 ? 'border-rose-300 ring-2 ring-rose-100' : 'border-slate-100'}`}>
                     <div className={`${t.bg} p-6 border-b ${t.border} flex justify-between items-center`}>
                       <h4 className={`font-bold text-lg ${t.text}`}>{room.name}</h4>
-                      <span className={`text-xs font-bold ${t.badgeBg} ${t.badgeText} px-3 py-1.5 rounded-full`}>{room.desc}</span>
+                      <span className={`text-xs font-bold ${t.badgeBg} ${t.badgeText} px-3 py-1.5 rounded-full`} title="Ofsted Requirement">{room.desc}</span>
                     </div>
                     <div className="p-6 space-y-6 flex-1 flex flex-col">
                       <div className="space-y-4">
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 font-medium">Children In</span>
-                          <span className="font-bold text-slate-900 text-base">{room.children} / {room.cap} <span className="text-xs font-normal text-slate-400">(Cap)</span></span>
+                          <span className="text-slate-500 font-medium">Children Attending</span>
+                          <span className="font-bold text-slate-900 text-base">{room.children} / {room.cap} <span className="text-xs font-normal text-slate-400">(Capacity)</span></span>
                         </div>
                         
-                        <div className="flex justify-between items-center text-sm p-3.5 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center text-sm p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner gap-3">
                           <span className="text-slate-600 font-bold flex flex-col">
-                            Regular Staff
+                            Staff Assigned
                             {room.agencyStaff > 0 && <span className="text-[10px] text-rose-500 mt-0.5 flex items-center"><AlertTriangle size={10} className="mr-1"/> +{room.agencyStaff} Agency (£££)</span>}
                           </span>
-                          <div className="flex items-center space-x-1">
+                          <div className="flex items-center justify-between w-full sm:w-auto">
                             <div className="flex items-center space-x-3 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
                               <button onClick={() => handleRemoveStaff(roomId)} disabled={totalStaffInRoom === 0} className={`p-2 rounded-lg transition ${totalStaffInRoom === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600 active:scale-95'}`}><UserMinus size={18}/></button>
                               <span className="font-black text-xl text-slate-900 w-6 text-center">{totalStaffInRoom}</span>
-                              <button onClick={() => handleAddStaff(roomId)} disabled={pool === 0} className={`p-2 rounded-lg transition ${pool === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 active:scale-95'}`} title="Add Regular Staff"><UserPlus size={18}/></button>
+                              <button onClick={() => handleAddStaff(roomId)} disabled={pool === 0} className={`p-2 rounded-lg transition ${pool === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 active:scale-95'}`} title="Assign Available Staff"><UserPlus size={18}/></button>
                             </div>
-                            {/* PP12: 緊急派遣員工呼叫 */}
+                            {/* 優化 5: 變現機制 B (派遣媒合抽成) */}
                             {pool === 0 && !isCompliant && (
-                              <button onClick={() => handleAddAgencyStaff(roomId)} className="ml-2 bg-rose-100 text-rose-700 p-2 rounded-xl hover:bg-rose-200 transition active:scale-95 border border-rose-200" title="Emergency Hire Agency Staff">
+                              <button onClick={() => handleAddAgencyStaff(roomId)} className="ml-2 bg-rose-100 text-rose-700 p-2 rounded-xl hover:bg-rose-200 transition active:scale-95 border border-rose-200" title="Request Agency Staff Cover">
                                 <ShieldAlert size={18} />
                               </button>
                             )}
@@ -578,9 +635,12 @@ export default function App() {
                         <div className="flex justify-end">{statusBadge}</div>
                       </div>
                       
-                      <div className="pt-6 border-t border-slate-100 mt-auto flex justify-between items-center">
-                        <span className="text-slate-500 font-medium flex flex-col">Est. Profit Margin</span>
-                        <span className={`font-black text-2xl transition-colors duration-300 ${marginColor}`}>{profitMargin}%</span>
+                      <div className="pt-6 border-t border-slate-100 mt-auto flex justify-between items-start">
+                        <span className="text-slate-500 font-medium flex flex-col">
+                          Est. Room Profitability
+                          {profitMargin < 0 && <span className="text-[10px] text-rose-500 mt-1 font-bold">Losing money today!</span>}
+                        </span>
+                        <span className={`font-black text-2xl transition-colors duration-300 ${marginColor}`}>{privacyMode ? '***' : `${profitMargin}%`}</span>
                       </div>
                     </div>
                   </div>
@@ -588,62 +648,64 @@ export default function App() {
               })}
             </div>
 
-            {/* PP14: 動態通膨定價調整器 */}
             <div className="mt-8 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
                <div className="flex items-start">
                  <div className="bg-amber-100 p-3 rounded-2xl text-amber-600 mr-4 shrink-0"><LineChart size={24}/></div>
                  <div>
-                   <h4 className="font-bold text-slate-900">Dynamic Pricing & Inflation Adjuster</h4>
-                   <p className="text-sm text-slate-500 mt-1">Inflation tracker indicates food & energy costs rose 3.2% this quarter. Current base rate is £{selectedSite.includes('London') ? '9.50' : '8.50'}/hr.</p>
+                   <h4 className="font-bold text-slate-900">Dynamic Pricing Check</h4>
+                   <p className="text-sm text-slate-500 mt-1">Inflation data shows local nursery operating costs rose 3.2% this quarter. Your current private rate is £{selectedSite.includes('London') ? '9.50' : '8.50'}/hr.</p>
                  </div>
                </div>
-               <div className="flex flex-col items-end">
+               <div className="flex flex-col items-end shrink-0">
                  <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-3 py-1 rounded-md mb-2">Suggested Rate: £{selectedSite.includes('London') ? '9.85' : '8.80'} (+4%)</span>
-                 <button className="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-sm hover:bg-slate-800 transition active:scale-95">Apply New Term Fees</button>
+                 <button className="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-sm hover:bg-slate-800 transition active:scale-95">Update Future Fees</button>
                </div>
             </div>
           </div>
         );
 
       case 'expenses':
-        // PP17: 迷你分類帳 (Mini-Ledger) 與收據 AI 掃描
         return (
           <div className="space-y-6 pb-24 md:pb-6 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 mb-6">
               <div>
-                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Mini-Ledger</h3>
-                <span className="text-sm text-slate-500 font-medium">Smart Receipt Scanner & Expenses</span>
+                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Receipts & Expenses</h3>
+                <span className="text-sm text-slate-500 font-medium">Scan receipts and track supplier costs</span>
               </div>
               <button onClick={handleScanReceipt} disabled={isScanning} className="flex items-center px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition active:scale-95 shadow-md">
                 {isScanning ? <RefreshCw size={18} className="animate-spin mr-2"/> : <Smartphone size={18} className="mr-2"/>}
-                {isScanning ? 'Processing AI...' : 'Scan Receipt (AI)'}
+                {isScanning ? 'Processing Image...' : 'Scan Receipt'}
               </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
-                 <div><p className="text-sm text-slate-500 font-medium">Monthly Outgoings</p><p className="text-2xl font-bold text-slate-900 mt-1">£3,420.50</p></div>
+                 <div><p className="text-sm text-slate-500 font-medium">Monthly Outgoings</p><p className="text-2xl font-bold text-slate-900 mt-1">{formatMoney(3420.50)}</p></div>
                  <div className="p-3 bg-rose-50 text-rose-600 rounded-xl"><ArrowDownToLine size={20}/></div>
                </div>
-               <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
-                 <div><p className="text-sm text-slate-500 font-medium">Consumables Ratio</p><p className="text-2xl font-bold text-slate-900 mt-1">12.4%</p></div>
-                 <div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><PieChart size={20}/></div>
+               
+               {/* 優化 5: 變現機制 A (商用能源/保險切換推薦) */}
+               <div className="lg:col-span-2 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 rounded-3xl border border-emerald-100 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                 <div>
+                   <p className="text-sm text-emerald-800 font-bold flex items-center"><Sparkles size={16} className="mr-1.5"/> Smart Savings Alert</p>
+                   <p className="text-sm text-emerald-700 mt-1">Our AI noticed you are paying above average for your commercial energy. Switch to a green tariff and save approximately £400/year.</p>
+                 </div>
+                 <a href="#" className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-emerald-700 whitespace-nowrap transition">Compare Tariffs</a>
                </div>
             </div>
 
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-                <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider flex items-center"><ReceiptText size={18} className="mr-2 text-slate-400"/> Recent Uploads</h3>
+                <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider flex items-center"><ReceiptText size={18} className="mr-2 text-slate-400"/> Recent Logged Expenses</h3>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm min-w-[600px]">
                   <thead className="bg-white border-b border-slate-100">
                     <tr className="text-slate-400 text-xs uppercase">
                       <th className="px-6 py-4 font-bold">Date</th>
-                      <th className="px-6 py-4 font-bold">Vendor</th>
-                      <th className="px-6 py-4 font-bold">AI Category</th>
+                      <th className="px-6 py-4 font-bold">Supplier</th>
+                      <th className="px-6 py-4 font-bold">Category</th>
                       <th className="px-6 py-4 font-bold text-right">Amount</th>
-                      <th className="px-6 py-4 font-bold text-center">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -652,10 +714,7 @@ export default function App() {
                         <td className="px-6 py-4 text-slate-500 font-medium">{exp.date}</td>
                         <td className="px-6 py-4 font-bold text-slate-900">{exp.vendor}</td>
                         <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-xs font-bold">{exp.category}</span></td>
-                        <td className="px-6 py-4 text-right font-black text-slate-800">£{exp.amount.toFixed(2)}</td>
-                        <td className="px-6 py-4 text-center">
-                           <span className={`text-xs font-bold px-2 py-1 rounded-full ${exp.status === 'Reconciled' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{exp.status}</span>
-                        </td>
+                        <td className="px-6 py-4 text-right font-black text-slate-800">{formatMoney(exp.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -667,10 +726,9 @@ export default function App() {
     }
   };
 
-  // === 系統主佈局 (Main App Layout) ===
+  // === 系統主佈局 ===
   return (
     <>
-      {/* 背景與外框，列印時隱藏 (print:hidden) */}
       <div className={`flex h-screen bg-[#F5F5F7] font-sans antialiased text-slate-900 overflow-hidden ${invoiceModalData ? 'print:hidden' : ''}`}>
         
         {/* === 桌機版側邊欄 === */}
@@ -680,7 +738,7 @@ export default function App() {
               <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-xl shadow-sm"><Sparkles size={20} className="text-white" /></div>
               <div>
                 <h1 className="text-slate-900 font-extrabold text-lg leading-tight tracking-tight">NurseryFinance</h1>
-                <p className="text-[11px] text-slate-500 font-bold tracking-widest uppercase">The CFO Brain</p>
+                <p className="text-[11px] text-slate-500 font-bold tracking-widest uppercase">For Managers</p>
               </div>
             </div>
             
@@ -702,47 +760,69 @@ export default function App() {
             </div>
 
             <nav className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1 mt-4">Modules</label>
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block px-1 mt-4">Workspace</label>
               <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}><LayoutDashboard size={20} /><span>Dashboard</span></button>
-              <button onClick={() => setActiveTab('billing')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === 'billing' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}><FileText size={20} /><span>Billing & Sync</span></button>
-              <button onClick={() => setActiveTab('optimisation')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === 'optimisation' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}><Users size={20} /><span>Optimisation</span></button>
-              <button onClick={() => setActiveTab('expenses')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === 'expenses' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}><Calculator size={20} /><span>Expenses Ledger</span></button>
+              <button onClick={() => setActiveTab('billing')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === 'billing' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}><FileText size={20} /><span>Invoices & Funding</span></button>
+              <button onClick={() => setActiveTab('optimisation')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === 'optimisation' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}><Users size={20} /><span>Staff Ratios</span></button>
+              <button onClick={() => setActiveTab('expenses')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium transition ${activeTab === 'expenses' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}><Calculator size={20} /><span>Receipts & Costs</span></button>
             </nav>
           </div>
           <div className="mt-auto p-6 pb-8">
              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
-                <div className="flex items-center space-x-2"><div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-sm">JD</div><div className="flex flex-col"><span className="text-sm font-bold text-slate-900">Jane Doe</span><span className="text-[10px] text-slate-500 uppercase font-bold">Director</span></div></div>
+                <div className="flex items-center space-x-2"><div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-sm">JD</div><div className="flex flex-col"><span className="text-sm font-bold text-slate-900">Jane Doe</span><span className="text-[10px] text-slate-500 uppercase font-bold">Manager</span></div></div>
              </div>
           </div>
         </aside>
 
         {/* === 主內容區塊 === */}
         <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
-          {/* 行動裝置 Header */}
-          <header className="md:hidden bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-5 py-4 shrink-0 z-30 sticky top-0">
-            <div className="flex items-center space-x-2"><div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-1.5 rounded-lg shadow-sm"><Sparkles size={16} className="text-white" /></div><h1 className="text-slate-900 font-extrabold text-lg tracking-tight">NurseryFinance</h1></div>
-            <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-sm">JD</div>
+          {/* 行動裝置/桌面通用 Header */}
+          <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-5 md:px-8 py-4 shrink-0 z-30 sticky top-0">
+            <div className="flex items-center space-x-2 md:hidden">
+               <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-1.5 rounded-lg shadow-sm"><Sparkles size={16} className="text-white" /></div>
+               <h1 className="text-slate-900 font-extrabold text-lg tracking-tight">NurseryFinance</h1>
+            </div>
+            <div className="hidden md:block">
+               {/* 桌面版保留空白或麵包屑 */}
+            </div>
+            <div className="flex items-center space-x-4">
+              {/* 優化 1: 隱私模式開關 */}
+              <button 
+                onClick={() => setPrivacyMode(!privacyMode)} 
+                className="flex items-center text-sm font-medium text-slate-500 hover:text-slate-800 transition bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200"
+                title="Hide sensitive financial numbers"
+              >
+                {privacyMode ? <EyeOff size={16} className="mr-1.5" /> : <Eye size={16} className="mr-1.5" />}
+                {privacyMode ? 'Privacy On' : 'Privacy Off'}
+              </button>
+              <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-sm md:hidden">JD</div>
+            </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-8"><div className="max-w-7xl mx-auto">{renderContent()}</div></div>
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 2xl:p-10 w-full">
+            {/* 優化 1: 滿版超寬螢幕支援 */}
+            <div className="max-w-[1600px] mx-auto w-full">
+              {renderContent()}
+            </div>
+          </div>
 
-          {/* 行動裝置底部導覽列 (iOS 風格) */}
+          {/* 行動裝置底部導覽列 */}
           <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-slate-200 flex justify-around p-2 pb-safe z-50">
             <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center p-2 min-w-[60px] ${activeTab === 'dashboard' ? 'text-blue-600' : 'text-slate-400'}`}><LayoutDashboard size={22} className="mb-1" /><span className="text-[10px] font-bold">Dash</span></button>
             <button onClick={() => setActiveTab('billing')} className={`flex flex-col items-center p-2 min-w-[60px] ${activeTab === 'billing' ? 'text-blue-600' : 'text-slate-400'}`}><FileText size={22} className="mb-1" /><span className="text-[10px] font-bold">Billing</span></button>
-            <button onClick={() => setActiveTab('optimisation')} className={`flex flex-col items-center p-2 min-w-[60px] ${activeTab === 'optimisation' ? 'text-blue-600' : 'text-slate-400'}`}><Users size={22} className="mb-1" /><span className="text-[10px] font-bold">Optimise</span></button>
-            <button onClick={() => setActiveTab('expenses')} className={`flex flex-col items-center p-2 min-w-[60px] ${activeTab === 'expenses' ? 'text-blue-600' : 'text-slate-400'}`}><Calculator size={22} className="mb-1" /><span className="text-[10px] font-bold">Ledger</span></button>
+            <button onClick={() => setActiveTab('optimisation')} className={`flex flex-col items-center p-2 min-w-[60px] ${activeTab === 'optimisation' ? 'text-blue-600' : 'text-slate-400'}`}><Users size={22} className="mb-1" /><span className="text-[10px] font-bold">Ratios</span></button>
+            <button onClick={() => setActiveTab('expenses')} className={`flex flex-col items-center p-2 min-w-[60px] ${activeTab === 'expenses' ? 'text-blue-600' : 'text-slate-400'}`}><Calculator size={22} className="mb-1" /><span className="text-[10px] font-bold">Receipts</span></button>
           </nav>
         </main>
       </div>
 
-      {/* === 彈出層：智能發票 PDF Modal (涵蓋 PP1, PP7, PP11, PP15) === */}
+      {/* === 彈出層：智能發票 PDF Modal === */}
       {invoiceModalData && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 print:absolute print:inset-0 print:bg-white print:p-0 print:block">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:rounded-none relative overflow-hidden">
             
             <div className="flex justify-between items-center p-6 border-b border-slate-100 print:hidden relative z-10 bg-white">
-              <h2 className="font-bold text-lg flex items-center text-slate-800"><Receipt className="mr-2 text-blue-600"/> Smart Invoice Preview</h2>
+              <h2 className="font-bold text-lg flex items-center text-slate-800"><Receipt className="mr-2 text-blue-600"/> Invoice Preview</h2>
               <button onClick={() => { setInvoiceModalData(null); setShowAIExplain(false); }} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-full transition"><X size={20} className="text-slate-500"/></button>
             </div>
 
@@ -776,7 +856,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 拆解混合計費表格 */}
               <div className="mb-10">
                 <table className="w-full text-left text-sm">
                   <thead>
@@ -810,7 +889,6 @@ export default function App() {
                 </table>
               </div>
 
-              {/* 小計與總計 */}
               <div className="flex justify-end">
                 <div className="w-64">
                   <div className="flex justify-between py-2 text-sm text-slate-500">
@@ -821,16 +899,23 @@ export default function App() {
                     <span className="text-lg font-bold text-slate-900">Total Due</span>
                     <span className="text-2xl font-black text-slate-900">£{invoiceModalData.totalParentFee.toFixed(2)}</span>
                   </div>
+                  
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl text-left print:border-slate-300 print:bg-white">
+                     <p className="text-xs text-blue-700 font-bold uppercase mb-2 print:text-slate-800">Payment Details (BACS)</p>
+                     <p className="text-sm font-bold text-slate-800">NurseryFinance Ltd</p>
+                     <p className="text-sm text-slate-600">Sort Code: <span className="font-mono font-bold text-slate-800">20-40-60</span></p>
+                     <p className="text-sm text-slate-600">Account: <span className="font-mono font-bold text-slate-800">87654321</span></p>
+                     <p className="text-xs text-blue-600 mt-2 print:text-slate-800">Ref: <span className="font-bold">{invoiceModalData.name.split(' ')[0]}INV</span></p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* PP15: AI 家長發票白話文解釋框 */}
             {showAIExplain && (
               <div className="absolute bottom-[80px] right-6 w-80 bg-white border border-indigo-100 shadow-2xl rounded-2xl p-5 z-50 animate-in slide-in-from-bottom-4 print:hidden">
                 <div className="flex items-center mb-3">
                   <Wand2 className="text-indigo-500 mr-2" size={18}/>
-                  <h4 className="font-bold text-indigo-900 text-sm">AI Invoice Explain</h4>
+                  <h4 className="font-bold text-indigo-900 text-sm">Explain to Parent</h4>
                   <button onClick={()=>setShowAIExplain(false)} className="ml-auto text-slate-400 hover:text-slate-600"><X size={16}/></button>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -842,7 +927,7 @@ export default function App() {
 
             <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-between items-center rounded-b-3xl print:hidden relative z-10">
               <button onClick={() => setShowAIExplain(!showAIExplain)} className="flex items-center px-4 py-2 bg-indigo-100 text-indigo-700 rounded-xl font-bold text-sm hover:bg-indigo-200 transition active:scale-95">
-                <Wand2 size={16} className="mr-2"/> Explain to Parent
+                <Wand2 size={16} className="mr-2"/> Generate Parent Reply
               </button>
               <div className="flex gap-3">
                  <button onClick={() => { setInvoiceModalData(null); setShowAIExplain(false); }} className="px-5 py-2.5 rounded-xl font-bold text-slate-600 bg-white border hover:bg-slate-50 transition active:scale-95">Close</button>
