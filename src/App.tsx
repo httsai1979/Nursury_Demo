@@ -3,7 +3,8 @@ import {
   Mail, Clock, PoundSterling, FileText, AlertCircle, RefreshCw, 
   Database, Sparkles, Check, Search, Upload, LayoutDashboard, 
   TrendingUp, Users, PieChart, ShieldCheck, Wallet, Bell,
-  ChevronDown, MapPin, BadgeInfo, Star, FileOutput, X, Printer, Receipt
+  ChevronDown, MapPin, BadgeInfo, Star, FileOutput, X, Printer, Receipt,
+  UserPlus, UserMinus, UserCheck, AlertTriangle
 } from 'lucide-react';
 
 const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzvIzwCL52hTRwn07LeE94gMEJzIte92Z-XuBMlrEm3THOESmKd98Lcl00Q_QGsb6W4tw/exec"; 
@@ -66,6 +67,9 @@ export default function App() {
   // 階段二新增：發票 Modal 狀態
   const [invoiceModalData, setInvoiceModalData] = useState(null);
 
+  // 階段三新增：互動式排班狀態 (Floating Staff Pool Simulation)
+  const [staffData, setStaffData] = useState({ pool: 0, rooms: {} });
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [isChasing, setIsChasing] = useState(false);
@@ -77,10 +81,45 @@ export default function App() {
     setApiStatus('loading');
     const timer = setTimeout(() => {
       setStudents(generateMockData(selectedSite));
+      
+      // 階段三：每次切換校區，重置一個「有待優化」的排班情境供使用者推演
+      setStaffData({
+        pool: 0,
+        rooms: {
+          baby: { id: 'baby', name: 'Baby Room', desc: 'Ratio 1:3', children: 8, cap: 12, staff: 4, ratio: 3, revenue: 560, cost: 120, color: 'rose' }, // 8 children needs 3 staff. 4 is overstaffed.
+          toddler: { id: 'toddler', name: 'Toddler Room', desc: 'Ratio 1:4', children: 12, cap: 12, staff: 3, ratio: 4, revenue: 840, cost: 120, color: 'amber' }, // 12 children needs 3 staff. Perfect.
+          preschool: { id: 'preschool', name: 'Pre-School', desc: 'Ratio 1:8', children: 22, cap: 24, staff: 2, ratio: 8, revenue: 1540, cost: 120, color: 'emerald' } // 22 children needs 3 staff. 2 is non-compliant!
+        }
+      });
+      
       setApiStatus('demo_mode');
     }, 400);
     return () => clearTimeout(timer);
   }, [selectedSite]);
+
+  // 階段三：處理移除員工至浮動池
+  const handleRemoveStaff = (roomId) => {
+    setStaffData(prev => {
+      const newRooms = { ...prev.rooms };
+      if (newRooms[roomId].staff > 0) {
+        newRooms[roomId].staff -= 1;
+        return { ...prev, pool: prev.pool + 1, rooms: newRooms };
+      }
+      return prev;
+    });
+  };
+
+  // 階段三：處理從浮動池指派員工
+  const handleAddStaff = (roomId) => {
+    setStaffData(prev => {
+      if (prev.pool > 0) {
+        const newRooms = { ...prev.rooms };
+        newRooms[roomId].staff += 1;
+        return { ...prev, pool: prev.pool - 1, rooms: newRooms };
+      }
+      return prev;
+    });
+  };
 
   const handleDispatch = () => {
     setIsProcessing(true);
@@ -129,7 +168,6 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // 100% 免費的本地端 PDF 列印觸發器
   const handlePrintInvoice = () => {
     window.print();
   };
@@ -266,75 +304,109 @@ export default function App() {
         );
 
       case 'profitability':
+        // 階段三：互動式排班系統 (Interactive Optimisation Module)
+        const { pool, rooms } = staffData;
         return (
           <div className="space-y-6 pb-24 md:pb-6 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 mb-4">
               <div>
-                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Compliance & Optimisation</h3>
-                <span className="text-sm text-slate-500 font-medium">Live Ofsted Ratio vs Room Profitability ({selectedSite})</span>
+                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Interactive Optimisation</h3>
+                <span className="text-sm text-slate-500 font-medium">Live Ratio Simulation & Profitability for {selectedSite}</span>
               </div>
-              <button className="flex items-center text-sm bg-white border border-slate-200 px-4 py-2 rounded-xl font-bold shadow-sm hover:bg-slate-50 transition w-full md:w-auto justify-center">
-                Date: Today <ChevronDown size={16} className="ml-2 text-slate-400"/>
-              </button>
+              
+              {/* Floating Staff Pool 浮動人力池 UI */}
+              <div className={`flex items-center px-4 py-2.5 rounded-2xl font-bold border-2 transition-all shadow-sm ${pool > 0 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 scale-105' : 'bg-white border-slate-200 text-slate-500'}`}>
+                 <Users size={18} className="mr-2" /> 
+                 <span>Floating Staff Pool: <span className="text-xl ml-2 font-black">{pool}</span></span>
+              </div>
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white rounded-3xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden flex flex-col">
-                <div className="bg-rose-50/50 p-6 border-b border-rose-100 flex justify-between items-center">
-                  <h4 className="font-bold text-lg text-rose-950">Baby Room</h4>
-                  <span className="text-xs font-bold bg-rose-200/80 text-rose-900 px-3 py-1.5 rounded-full">Ratio 1:3</span>
-                </div>
-                <div className="p-6 space-y-5 flex-1 flex flex-col">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium">Children In</span><span className="font-bold text-slate-900 text-base">8 / 12 <span className="text-xs font-normal text-slate-400">(Cap)</span></span></div>
-                    <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium">Labour Assigned</span><span className="font-bold text-amber-600 text-base bg-amber-50 px-2 py-0.5 rounded-md">3 (Overstaffed)</span></div>
-                  </div>
-                  <div className="pt-5 border-t border-slate-100 mt-auto">
-                    <div className="flex justify-between items-center text-sm mb-4"><span className="text-slate-500 font-medium">Est. Profit Margin</span><span className="font-bold text-rose-600 text-lg">-2% (Loss)</span></div>
-                    <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center transition shadow-md active:scale-[0.98]">
-                      <Bell size={18} className="mr-2"/> Push Ad-hoc (4 slots)
-                    </button>
-                  </div>
-                </div>
-              </div>
+              {Object.entries(rooms).map(([roomId, room]) => {
+                // 動態計算合規性
+                const reqStaff = Math.ceil(room.children / room.ratio);
+                const isCompliant = room.staff >= reqStaff;
+                const isOverstaffed = room.staff > reqStaff;
+                
+                // 狀態 Badge 渲染
+                let statusBadge = null;
+                if (room.staff < reqStaff) {
+                  statusBadge = <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded-md flex items-center animate-pulse"><AlertTriangle size={12} className="mr-1"/>Non-Compliant (-{reqStaff - room.staff})</span>;
+                } else if (isOverstaffed) {
+                  statusBadge = <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-md">Overstaffed (+{room.staff - reqStaff})</span>;
+                } else {
+                  statusBadge = <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md flex items-center"><UserCheck size={12} className="mr-1"/>Optimal</span>;
+                }
 
-              <div className="bg-white rounded-3xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden flex flex-col">
-                <div className="bg-amber-50/50 p-6 border-b border-amber-100 flex justify-between items-center">
-                  <h4 className="font-bold text-lg text-amber-950">Toddler Room</h4>
-                  <span className="text-xs font-bold bg-amber-200/80 text-amber-900 px-3 py-1.5 rounded-full">Ratio 1:4</span>
-                </div>
-                <div className="p-6 space-y-5 flex-1 flex flex-col">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium">Children In</span><span className="font-bold text-slate-900 text-base">12 / 12 <span className="text-xs font-normal text-slate-400">(Cap)</span></span></div>
-                    <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium">Labour Assigned</span><span className="font-bold text-emerald-600 text-base bg-emerald-50 px-2 py-0.5 rounded-md">3 (Perfect)</span></div>
-                  </div>
-                  <div className="pt-5 border-t border-slate-100 mt-auto">
-                    <div className="flex justify-between items-center text-sm mb-4"><span className="text-slate-500 font-medium">Est. Profit Margin</span><span className="font-bold text-emerald-600 text-lg">28% (Healthy)</span></div>
-                    <button className="w-full bg-slate-100 text-slate-400 py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center cursor-not-allowed">
-                      Full Capacity
-                    </button>
-                  </div>
-                </div>
-              </div>
+                // 即時利潤率計算
+                const profitMargin = (((room.revenue - (room.staff * room.cost)) / room.revenue) * 100).toFixed(1);
+                const marginColor = profitMargin < 15 ? 'text-rose-600' : profitMargin < 25 ? 'text-amber-600' : 'text-emerald-600';
 
-              <div className="bg-white rounded-3xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden flex flex-col">
-                <div className="bg-emerald-50/50 p-6 border-b border-emerald-100 flex justify-between items-center">
-                  <h4 className="font-bold text-lg text-emerald-950">Pre-School</h4>
-                  <span className="text-xs font-bold bg-emerald-200/80 text-emerald-900 px-3 py-1.5 rounded-full">Ratio 1:8</span>
-                </div>
-                <div className="p-6 space-y-5 flex-1 flex flex-col">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium">Children In</span><span className="font-bold text-slate-900 text-base">22 / 24 <span className="text-xs font-normal text-slate-400">(Cap)</span></span></div>
-                    <div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-medium">Labour Assigned</span><span className="font-bold text-emerald-600 text-base bg-emerald-50 px-2 py-0.5 rounded-md">3 (Compliant)</span></div>
+                // 主題顏色對應
+                const themeClasses = {
+                  rose: { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-950', badgeBg: 'bg-rose-200/80', badgeText: 'text-rose-900' },
+                  amber: { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-950', badgeBg: 'bg-amber-200/80', badgeText: 'text-amber-900' },
+                  emerald: { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-950', badgeBg: 'bg-emerald-200/80', badgeText: 'text-emerald-900' }
+                };
+                const t = themeClasses[room.color];
+
+                return (
+                  <div key={roomId} className="bg-white rounded-3xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden flex flex-col transition-all hover:shadow-lg">
+                    <div className={`${t.bg} p-6 border-b ${t.border} flex justify-between items-center`}>
+                      <h4 className={`font-bold text-lg ${t.text}`}>{room.name}</h4>
+                      <span className={`text-xs font-bold ${t.badgeBg} ${t.badgeText} px-3 py-1.5 rounded-full`}>{room.desc}</span>
+                    </div>
+                    <div className="p-6 space-y-6 flex-1 flex flex-col">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500 font-medium">Children In</span>
+                          <span className="font-bold text-slate-900 text-base">{room.children} / {room.cap} <span className="text-xs font-normal text-slate-400">(Cap)</span></span>
+                        </div>
+                        
+                        {/* 互動式排班控制器 (Interactive Controls) */}
+                        <div className="flex justify-between items-center text-sm p-3.5 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
+                          <span className="text-slate-600 font-bold">Labour Assigned</span>
+                          <div className="flex items-center space-x-3 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                            <button 
+                              onClick={() => handleRemoveStaff(roomId)} 
+                              disabled={room.staff === 0} 
+                              className={`p-2 rounded-lg transition ${room.staff === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600 active:scale-95'}`}
+                            >
+                              <UserMinus size={18}/>
+                            </button>
+                            <span className="font-black text-xl text-slate-900 w-6 text-center">{room.staff}</span>
+                            <button 
+                              onClick={() => handleAddStaff(roomId)} 
+                              disabled={pool === 0} 
+                              className={`p-2 rounded-lg transition ${pool === 0 ? 'text-slate-300' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 active:scale-95'}`}
+                            >
+                              <UserPlus size={18}/>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex justify-end">{statusBadge}</div>
+                      </div>
+                      
+                      <div className="pt-6 border-t border-slate-100 mt-auto">
+                        <div className="flex justify-between items-center text-sm mb-5">
+                          <span className="text-slate-500 font-medium">Est. Profit Margin</span>
+                          <span className={`font-black text-2xl transition-colors duration-300 ${marginColor}`}>{profitMargin}%</span>
+                        </div>
+                        <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center transition shadow-md active:scale-[0.98]">
+                          <Bell size={18} className="mr-2"/> Push Ad-hoc ({room.cap - room.children} slots)
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="pt-5 border-t border-slate-100 mt-auto">
-                    <div className="flex justify-between items-center text-sm mb-4"><span className="text-slate-500 font-medium">Est. Profit Margin</span><span className="font-bold text-emerald-600 text-lg">35% (Optimal)</span></div>
-                    <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center transition shadow-md active:scale-[0.98]">
-                      <Bell size={18} className="mr-2"/> Push Ad-hoc (2 slots)
-                    </button>
-                  </div>
-                </div>
-              </div>
+                );
+              })}
+            </div>
+            
+            <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-start">
+              <BadgeInfo size={20} className="text-indigo-600 mr-3 shrink-0 mt-0.5" />
+              <p className="text-sm text-indigo-900">
+                <strong>How to optimise:</strong> The Pre-School is currently non-compliant. Click the <strong className="bg-white px-1.5 py-0.5 rounded shadow-sm">-</strong> button on the overstaffed Baby Room to move a staff member to the Floating Pool, then click <strong className="bg-white px-1.5 py-0.5 rounded shadow-sm">+</strong> on the Pre-School to assign them there. Watch your profit margins update instantly!
+              </p>
             </div>
           </div>
         );
@@ -385,7 +457,6 @@ export default function App() {
                     <th className="px-6 py-4 font-bold text-center">Top-ups & Meals</th>
                     <th className="px-6 py-4 font-bold text-right">Parent Total</th>
                     <th className="px-6 py-4 font-bold text-center">Status</th>
-                    {/* 階段二：新增 Action 欄位 */}
                     <th className="px-6 py-4 font-bold text-center">Actions</th>
                   </tr></thead>
                   <tbody className="divide-y divide-slate-50">
@@ -413,12 +484,11 @@ export default function App() {
                             <div className="font-black text-slate-900 text-base">£{s.totalParentFee.toLocaleString()}</div>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            {isPaid 
-                              ? <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100"><Sparkles size={14} className="mr-1"/>{s.paymentStatus}</span> 
-                              : <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-100"><AlertCircle size={14} className="mr-1"/>Unpaid</span>}
+                            {s.invoiceStatus === 'Sent' 
+                              ? <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700"><Check size={14} className="mr-1"/>Sent</span> 
+                              : <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500"><Clock size={14} className="mr-1"/>Draft</span>}
                           </td>
                           <td className="px-6 py-4 text-center">
-                            {/* 階段二：開啟 PDF 發票預覽的按鈕 */}
                             <button onClick={() => setInvoiceModalData(s)} className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition shadow-sm active:scale-95">
                               <Receipt size={14} className="mr-1.5"/> View PDF
                             </button>
@@ -437,10 +507,8 @@ export default function App() {
 
   return (
     <>
-      {/* 主要 App 介面 - 當列印時隱藏 (print:hidden) */}
       <div className={`flex h-screen bg-[#F5F5F7] font-sans antialiased text-slate-900 overflow-hidden ${invoiceModalData ? 'print:hidden' : ''}`}>
         
-        {/* 桌面版側邊欄 */}
         <aside className="w-64 bg-white border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-20 hidden md:flex flex-col relative">
           <div className="p-6 pt-8 pb-4">
             <div className="flex items-center space-x-3 mb-8">
@@ -491,7 +559,6 @@ export default function App() {
           </div>
         </aside>
 
-        {/* 主要內容區 */}
         <main className="flex-1 flex flex-col h-full overflow-hidden relative">
           <header className="md:hidden bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-5 py-4 shrink-0 z-30 sticky top-0">
             <div className="flex items-center space-x-2">
@@ -524,22 +591,17 @@ export default function App() {
         </main>
       </div>
 
-      {/* 階段二：Smart Invoice PDF Modal (完美解決痛點 1 & 7) */}
-      {/* 運用 Tailwind 的 print:* 類別，實現 100% 免費且乾淨的本地端 PDF 產出 */}
       {invoiceModalData && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 print:absolute print:inset-0 print:bg-white print:p-0 print:block">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:rounded-none">
             
-            {/* Modal 頂部控制列 - 列印時隱藏 */}
             <div className="flex justify-between items-center p-6 border-b border-slate-100 print:hidden">
               <h2 className="font-bold text-lg flex items-center text-slate-800"><Receipt className="mr-2 text-blue-600"/> Smart Invoice Preview</h2>
               <button onClick={() => setInvoiceModalData(null)} className="p-2 bg-slate-50 hover:bg-slate-200 rounded-full transition"><X size={20} className="text-slate-500"/></button>
             </div>
 
-            {/* 可列印的發票內容區域 (Printable Area) */}
             <div className="p-8 md:p-10 overflow-y-auto print:overflow-visible">
               
-              {/* 發票標頭 */}
               <div className="flex justify-between items-start mb-10">
                 <div>
                   <h1 className="text-4xl font-black text-slate-900 tracking-tight">INVOICE</h1>
@@ -554,7 +616,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 帳單對象資訊 */}
               <div className="grid grid-cols-2 gap-8 mb-10 p-6 bg-slate-50 rounded-2xl print:border print:border-slate-100 print:bg-transparent">
                 <div>
                   <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Billed To (Parent)</p>
@@ -571,7 +632,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 費用明細表格 (完美拆解 Government Funding 與 Private Fees) */}
               <div className="mb-10">
                 <table className="w-full text-left text-sm">
                   <thead>
@@ -583,7 +643,6 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {/* 政府補助時數 */}
                     <tr className="text-slate-500">
                       <td className="py-4">
                         <span className="font-bold text-slate-700">Government Funded Hours</span>
@@ -593,7 +652,6 @@ export default function App() {
                       <td className="py-4 text-right">-</td>
                       <td className="py-4 text-right font-bold text-slate-800">£0.00</td>
                     </tr>
-                    {/* 家長自費時數 */}
                     <tr className="text-slate-500">
                       <td className="py-4">
                         <span className="font-bold text-slate-700">Private Childcare Hours</span>
@@ -603,7 +661,6 @@ export default function App() {
                       <td className="py-4 text-right">£{invoiceModalData.rate.toFixed(2)}</td>
                       <td className="py-4 text-right font-bold text-slate-800">£{invoiceModalData.privateFee.toFixed(2)}</td>
                     </tr>
-                    {/* 耗材與餐費附加 */}
                     <tr className="text-slate-500">
                       <td className="py-4">
                         <span className="font-bold text-slate-700">Consumables & Meals Top-up</span>
@@ -617,7 +674,6 @@ export default function App() {
                 </table>
               </div>
 
-              {/* 總結算 */}
               <div className="flex justify-end">
                 <div className="w-64">
                   <div className="flex justify-between py-2 text-sm text-slate-500">
@@ -629,7 +685,6 @@ export default function App() {
                     <span className="text-2xl font-black text-slate-900">£{invoiceModalData.totalParentFee.toFixed(2)}</span>
                   </div>
                   
-                  {/* 付款狀態章 */}
                   {invoiceModalData.paymentStatus.includes('Paid') ? (
                      <div className="mt-4 p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-center font-bold flex items-center justify-center">
                         <Sparkles size={16} className="mr-2"/> Payment Received
@@ -649,7 +704,6 @@ export default function App() {
 
             </div>
 
-            {/* Modal 底部控制列 - 列印時隱藏 */}
             <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-3xl print:hidden">
               <button onClick={() => setInvoiceModalData(null)} className="px-5 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition active:scale-95">Cancel</button>
               <button onClick={handlePrintInvoice} className="px-5 py-2.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition flex items-center active:scale-95">
